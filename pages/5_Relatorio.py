@@ -115,10 +115,14 @@ with col_preview:
 
         with col_html:
             b64_html = base64.b64encode(html.encode("utf-8")).decode()
-            st.link_button(
-                "🌐 Abrir relatório em nova aba",
-                f"data:text/html;charset=utf-8;base64,{b64_html}",
-                use_container_width=True,
+            data_url = f"data:text/html;charset=utf-8;base64,{b64_html}"
+            st.markdown(
+                f'<a href="{data_url}" target="_blank" rel="noopener noreferrer" '
+                f'style="display:block;text-align:center;padding:0.45rem 1rem;'
+                f'background:#6C63FF;color:white;border-radius:8px;font-weight:600;'
+                f'text-decoration:none;font-size:0.875rem;">'
+                f'🌐 Abrir relatório em nova aba</a>',
+                unsafe_allow_html=True,
             )
             st.caption("Só o relatório · Ctrl+P para salvar como PDF")
 
