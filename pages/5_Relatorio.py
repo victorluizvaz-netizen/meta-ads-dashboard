@@ -112,31 +112,42 @@ with col_preview:
 
         base_name = f"relatorio_{client_name.strip().lower().replace(' ', '_')}_{since}_{until}"
 
+        # Base64 oculto no DOM para o componente ler via window.parent
+        b64_html = base64.b64encode(html.encode("utf-8")).decode()
+        st.markdown(
+            f'<div id="rpt-data" style="display:none">{b64_html}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Botão principal — abre o relatório em nova aba via blob URL
+        stv1.html("""
+        <button onclick="
+          var el = window.parent.document.getElementById('rpt-data');
+          var b64 = el.textContent.trim();
+          var bin = atob(b64);
+          var u = new Uint8Array(bin.length);
+          for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+          var blob = new Blob([u],{type:'text/html;charset=utf-8'});
+          window.open(URL.createObjectURL(blob),'_blank');
+        " style="width:100%;padding:0.6rem 1rem;background:#6C63FF;color:white;
+        border:none;border-radius:8px;font-weight:600;cursor:pointer;
+        font-size:0.95rem;font-family:sans-serif;">
+          🌐 Abrir relatório em nova aba
+        </button>
+        """, height=55)
+        st.caption("Só o relatório é aberto · use Ctrl+P para salvar como PDF")
+
         col_html, col_pdf = st.columns(2)
 
         with col_html:
-            b64_html = base64.b64encode(html.encode("utf-8")).decode()
-            # Dados ocultos no DOM — componente lê via window.parent.document
-            st.markdown(
-                f'<div id="rpt-data" style="display:none">{b64_html}</div>',
-                unsafe_allow_html=True,
+            st.download_button(
+                label="⬇️ Baixar HTML",
+                data=html.encode("utf-8"),
+                file_name=f"{base_name}.html",
+                mime="text/html",
+                use_container_width=True,
             )
-            stv1.html("""
-            <button onclick="
-              var el = window.parent.document.getElementById('rpt-data');
-              var b64 = el.textContent.trim();
-              var bin = atob(b64);
-              var u = new Uint8Array(bin.length);
-              for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
-              var blob = new Blob([u],{type:'text/html;charset=utf-8'});
-              window.open(URL.createObjectURL(blob),'_blank');
-            " style="width:100%;padding:0.45rem 1rem;background:#6C63FF;color:white;
-            border:none;border-radius:8px;font-weight:600;cursor:pointer;
-            font-size:0.875rem;font-family:sans-serif;">
-              🌐 Abrir relatório em nova aba
-            </button>
-            """, height=50)
-            st.caption("Só o relatório · Ctrl+P para salvar como PDF")
+            st.caption("Alternativa: salvar arquivo")
 
         with col_pdf:
             with st.spinner("Gerando PDF..."):
