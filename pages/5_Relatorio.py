@@ -1,3 +1,4 @@
+import base64
 import streamlit as st
 from utils.meta_api import get_insights_with_comparison, get_adset_insights, get_ad_insights
 from utils.report_generator import generate_report, generate_pdf_report
@@ -113,14 +114,26 @@ with col_preview:
         col_html, col_pdf = st.columns(2)
 
         with col_html:
-            st.download_button(
-                label="⬇️ Baixar HTML",
-                data=html.encode("utf-8"),
-                file_name=f"{base_name}.html",
-                mime="text/html",
-                use_container_width=True,
-            )
-            st.caption("Interativo · abre no navegador")
+            b64_html = base64.b64encode(html.encode("utf-8")).decode()
+            open_btn = f"""
+            <script>
+            function openReport() {{
+                var b64 = '{b64_html}';
+                var binary = atob(b64);
+                var bytes = new Uint8Array(binary.length);
+                for (var i = 0; i < binary.length; i++) {{ bytes[i] = binary.charCodeAt(i); }}
+                var blob = new Blob([bytes], {{type: 'text/html; charset=utf-8'}});
+                window.open(URL.createObjectURL(blob), '_blank');
+            }}
+            </script>
+            <button onclick="openReport()" style="width:100%;padding:0.45rem 1rem;
+                background:#6C63FF;color:white;border:none;border-radius:8px;
+                font-weight:600;font-family:sans-serif;font-size:0.875rem;cursor:pointer;">
+                🌐 Abrir relatório em nova aba
+            </button>
+            """
+            st.components.v1.html(open_btn, height=48)
+            st.caption("Só o relatório · Ctrl+P para salvar como PDF")
 
         with col_pdf:
             with st.spinner("Gerando PDF..."):
