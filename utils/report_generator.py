@@ -842,7 +842,10 @@ def generate_report(df, df_prev, client_name, since, until, sections, notes="", 
 
 
 def generate_pdf_report(df, df_prev, client_name, since, until, sections, notes="", df_adsets=None, df_ads=None) -> bytes:
-    from xhtml2pdf import pisa
+    try:
+        from xhtml2pdf import pisa
+    except ImportError:
+        raise ImportError("pdf_unavailable")
 
     body = _pdf_body(df, df_prev, sections, notes, df_adsets=df_adsets, df_ads=df_ads)
     html = _wrap(body, client_name, since, until, for_pdf=True)

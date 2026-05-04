@@ -142,6 +142,11 @@ with col_preview:
                         type="primary",
                     )
                     st.caption("Abre em qualquer dispositivo")
+                except ImportError as e:
+                    if "pdf_unavailable" in str(e):
+                        st.info("PDF não disponível nesta versão online. Baixe o HTML e abra no navegador para imprimir como PDF.")
+                    else:
+                        st.error(f"Erro ao gerar PDF: {e}")
                 except Exception as e:
                     st.error(f"Erro ao gerar PDF: {e}")
 
