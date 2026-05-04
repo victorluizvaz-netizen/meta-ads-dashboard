@@ -1,5 +1,6 @@
 import base64
 import streamlit as st
+import streamlit.components.v1 as stv1
 from utils.meta_api import get_insights_with_comparison, get_adset_insights, get_ad_insights
 from utils.report_generator import generate_report, generate_pdf_report
 from utils.styles import css, section_header
@@ -115,15 +116,26 @@ with col_preview:
 
         with col_html:
             b64_html = base64.b64encode(html.encode("utf-8")).decode()
-            data_url = f"data:text/html;charset=utf-8;base64,{b64_html}"
+            # Dados ocultos no DOM — componente lê via window.parent.document
             st.markdown(
-                f'<a href="{data_url}" target="_blank" rel="noopener noreferrer" '
-                f'style="display:block;text-align:center;padding:0.45rem 1rem;'
-                f'background:#6C63FF;color:white;border-radius:8px;font-weight:600;'
-                f'text-decoration:none;font-size:0.875rem;">'
-                f'🌐 Abrir relatório em nova aba</a>',
+                f'<div id="rpt-data" style="display:none">{b64_html}</div>',
                 unsafe_allow_html=True,
             )
+            stv1.html("""
+            <button onclick="
+              var el = window.parent.document.getElementById('rpt-data');
+              var b64 = el.textContent.trim();
+              var bin = atob(b64);
+              var u = new Uint8Array(bin.length);
+              for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+              var blob = new Blob([u],{type:'text/html;charset=utf-8'});
+              window.open(URL.createObjectURL(blob),'_blank');
+            " style="width:100%;padding:0.45rem 1rem;background:#6C63FF;color:white;
+            border:none;border-radius:8px;font-weight:600;cursor:pointer;
+            font-size:0.875rem;font-family:sans-serif;">
+              🌐 Abrir relatório em nova aba
+            </button>
+            """, height=50)
             st.caption("Só o relatório · Ctrl+P para salvar como PDF")
 
         with col_pdf:
