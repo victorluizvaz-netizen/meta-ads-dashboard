@@ -112,28 +112,34 @@ with col_preview:
 
         base_name = f"relatorio_{client_name.strip().lower().replace(' ', '_')}_{since}_{until}"
 
-        # Base64 oculto no DOM para o componente ler via window.parent
         b64_html = base64.b64encode(html.encode("utf-8")).decode()
-        st.markdown(
-            f'<div id="rpt-data" style="display:none">{b64_html}</div>',
-            unsafe_allow_html=True,
-        )
 
-        # Botão principal — abre o relatório em nova aba via blob URL
-        stv1.html("""
-        <button onclick="
-          var el = window.parent.document.getElementById('rpt-data');
-          var b64 = el.textContent.trim();
-          var bin = atob(b64);
-          var u = new Uint8Array(bin.length);
-          for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
-          var blob = new Blob([u],{type:'text/html;charset=utf-8'});
-          window.open(URL.createObjectURL(blob),'_blank');
-        " style="width:100%;padding:0.6rem 1rem;background:#6C63FF;color:white;
-        border:none;border-radius:8px;font-weight:600;cursor:pointer;
-        font-size:0.95rem;font-family:sans-serif;">
-          🌐 Abrir relatório em nova aba
-        </button>
+        # Link com blob URL montado na carga — evita cross-origin (srcdoc = null origin)
+        stv1.html(f"""
+        <style>
+          a.btn{{display:block;width:100%;padding:0.6rem 1rem;background:#6C63FF;
+          color:white;border-radius:8px;font-weight:600;font-size:0.95rem;
+          font-family:sans-serif;text-align:center;text-decoration:none;cursor:pointer;
+          box-sizing:border-box;}}
+          a.btn:hover{{background:#5b52e6;}}
+        </style>
+        <a id="rpt" class="btn" href="#" target="_blank">🌐 Abrir relatório em nova aba</a>
+        <script>
+        (function(){{
+          try{{
+            var b64="{b64_html}";
+            var bin=atob(b64);
+            var u=new Uint8Array(bin.length);
+            for(var i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);
+            var blob=new Blob([u],{{type:'text/html;charset=utf-8'}});
+            document.getElementById('rpt').href=URL.createObjectURL(blob);
+          }}catch(e){{
+            var el=document.getElementById('rpt');
+            el.textContent='⚠️ Erro: '+e.message;
+            el.style.background='#dc3545';
+          }}
+        }})();
+        </script>
         """, height=55)
         st.caption("Só o relatório é aberto · use Ctrl+P para salvar como PDF")
 
