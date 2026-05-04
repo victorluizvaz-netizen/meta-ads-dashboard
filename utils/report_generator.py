@@ -602,7 +602,7 @@ def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=No
                 x=top_as["spend"], y=top_as["adset_name"], orientation="h",
                 marker=dict(color=BLUE),
             ))
-            _as_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5")}
+            _as_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5", automargin=True)}
             fig_as.update_layout(title="Top 10 conjuntos por investimento", **_as_layout)
             body += chart_fn(fig_as)
             body += _campaign_table_html(agg_as, cols_as)
@@ -612,7 +612,7 @@ def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=No
         if result[0] is not None:
             _, top_ctr, top_spend, base_cols = result
             body += _section("Criativos — Análise por Anúncio")
-            _cr_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5")}
+            _cr_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5", automargin=True)}
 
             if not top_spend.empty:
                 fig_cr = go.Figure(go.Bar(
@@ -792,7 +792,7 @@ def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None):
                 x=top_as["spend"], y=top_as["adset_name"], orientation="h",
                 marker=dict(color=BLUE),
             ))
-            _as_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5")}
+            _as_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5", automargin=True)}
             fig_as.update_layout(title="Top 10 conjuntos por investimento", **_as_layout)
             body += _fig_png(fig_as)
             body += _campaign_table_pdf(agg_as, cols_as)
@@ -802,7 +802,7 @@ def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None):
         if result[0] is not None:
             _, top_ctr, top_spend, base_cols = result
             body += _section_pdf("Criativos — Análise por Anúncio")
-            _cr_layout_pdf = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5")}
+            _cr_layout_pdf = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5", automargin=True)}
 
             if not top_spend.empty:
                 fig_cr = go.Figure(go.Bar(
