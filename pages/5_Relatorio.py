@@ -115,24 +115,11 @@ with col_preview:
 
         with col_html:
             b64_html = base64.b64encode(html.encode("utf-8")).decode()
-            open_btn = f"""
-            <script>
-            function openReport() {{
-                var b64 = '{b64_html}';
-                var binary = atob(b64);
-                var bytes = new Uint8Array(binary.length);
-                for (var i = 0; i < binary.length; i++) {{ bytes[i] = binary.charCodeAt(i); }}
-                var blob = new Blob([bytes], {{type: 'text/html; charset=utf-8'}});
-                window.open(URL.createObjectURL(blob), '_blank');
-            }}
-            </script>
-            <button onclick="openReport()" style="width:100%;padding:0.45rem 1rem;
-                background:#6C63FF;color:white;border:none;border-radius:8px;
-                font-weight:600;font-family:sans-serif;font-size:0.875rem;cursor:pointer;">
-                🌐 Abrir relatório em nova aba
-            </button>
-            """
-            st.components.v1.html(open_btn, height=48)
+            st.link_button(
+                "🌐 Abrir relatório em nova aba",
+                f"data:text/html;charset=utf-8;base64,{b64_html}",
+                use_container_width=True,
+            )
             st.caption("Só o relatório · Ctrl+P para salvar como PDF")
 
         with col_pdf:
