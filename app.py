@@ -4,7 +4,7 @@ from utils.meta_api import get_ad_accounts, get_insights_with_comparison
 from utils.formatters import currency, number, percent, delta_pct, top_insight
 from utils.alerts import generate_alerts
 from utils import charts
-from utils.styles import css, insight_box, section_header
+from utils.styles import css, insight_box, section_header, warning_box
 
 st.set_page_config(page_title="Meta Ads Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 st.markdown(css(), unsafe_allow_html=True)
@@ -40,7 +40,7 @@ st.session_state["account_id"] = account_id
 st.session_state["since"] = str(since)
 st.session_state["until"] = str(until)
 
-# ── Dados (carrega antes do filtro para popular as opções) ─────────────────────
+# ── Dados ──────────────────────────────────────────────────────────────────────
 with st.spinner("Buscando dados..."):
     try:
         df_raw, df_prev_raw, prev_since, prev_until = get_insights_with_comparison(account_id, str(since), str(until))
@@ -52,7 +52,7 @@ if df_raw.empty:
     st.warning("Nenhum dado encontrado. Tente um período diferente ou verifique a conta selecionada.")
     st.stop()
 
-for _col in ("conversations",):
+for _col in ("conversations", "cpc_conv"):
     if _col not in df_raw.columns:
         df_raw[_col] = 0
     if not df_prev_raw.empty and _col not in df_prev_raw.columns:
@@ -65,7 +65,6 @@ with st.sidebar:
     st.divider()
     st.caption("Filtro de campanhas")
 
-    # Preserva seleção prévia se ainda válida para a conta/período atual
     prev_sel = [c for c in st.session_state.get("selected_campaigns", []) if c in all_campaigns]
 
     selected_campaigns = st.multiselect(
@@ -142,54 +141,101 @@ if alerts:
             )
 
 # ── KPIs ───────────────────────────────────────────────────────────────────────
-def metric(label, fmt_val, col_name, agg="sum", lower_is_better=False):
-    cur = df[col_name].sum() if agg == "sum" else df[col_name].mean()
-    prv_val = (
-        df_prev[col_name].sum() if (not df_prev.empty and col_name in df_prev.columns and agg == "sum")
-        else (df_prev[col_name].mean() if (not df_prev.empty and col_name in df_prev.columns) else 0)
-    )
-    d, pos = delta_pct(cur, prv_val)
-    if lower_is_better and pos is not None:
-        pos = not pos
-    return label, fmt_val(cur), d, "normal" if (pos is None or pos) else "inverse"
+def ds(cur, prv, lower_is_better=False):
+    d, pos = delta_pct(cur, prv)
+    if lower_is_better and pos is not None: pos = not pos
+    return d, "normal" if (pos is None or pos) else "inverse"
 
+total_spend  = df["spend"].sum()
+total_leads  = df["leads"].sum()
+cpl          = total_spend / total_leads if total_leads > 0 else 0
+total_conv   = df["conversations"].sum()
+cpc_conv     = total_spend / total_conv if total_conv > 0 else 0
+total_imp    = df["impressions"].sum()
+total_reach  = df["reach"].sum()
+total_clicks = df["clicks"].sum()
+freq         = total_imp / total_reach if total_reach > 0 else 0
+ctr          = total_clicks / total_imp * 100 if total_imp > 0 else 0
+cpm          = total_spend / total_imp * 1000 if total_imp > 0 else 0
+cpc          = total_spend / total_clicks if total_clicks > 0 else 0
 
+prv_spend  = df_prev["spend"].sum() if not df_prev.empty else 0
+prv_leads  = df_prev["leads"].sum() if not df_prev.empty else 0
+prv_cpl    = prv_spend / prv_leads if prv_leads > 0 else 0
+prv_conv   = df_prev["conversations"].sum() if not df_prev.empty else 0
+prv_cpc_cv = prv_spend / prv_conv if prv_conv > 0 else 0
+prv_imp    = df_prev["impressions"].sum() if not df_prev.empty else 0
+prv_reach  = df_prev["reach"].sum() if not df_prev.empty else 0
+prv_clicks = df_prev["clicks"].sum() if not df_prev.empty else 0
+prv_ctr    = prv_clicks / prv_imp * 100 if prv_imp > 0 else 0
+prv_cpm    = prv_spend / prv_imp * 1000 if prv_imp > 0 else 0
+prv_cpc    = prv_spend / prv_clicks if prv_clicks > 0 else 0
+prv_freq   = prv_imp / prv_reach if prv_reach > 0 else 0
+
+# Linha 1: métricas de resultado
 c1, c2, c3, c4, c5 = st.columns(5)
-for col_st, row in zip(
-    [c1, c2, c3, c4, c5],
-    [
-        metric("💰 Investimento", currency, "spend"),
-        metric("👁️ Impressões", number, "impressions"),
-        metric("📣 Alcance", number, "reach"),
-        metric("🖱️ Cliques", number, "clicks"),
-        metric("📊 CTR Médio", percent, "ctr", agg="mean"),
-    ],
-):
-    col_st.metric(row[0], row[1], delta=row[2], delta_color=row[3])
+d, dc = ds(total_spend, prv_spend)
+c1.metric("💰 Investimento", currency(total_spend), delta=d, delta_color=dc)
+d, dc = ds(total_leads, prv_leads)
+c2.metric("🎯 Leads", number(total_leads), delta=d, delta_color=dc)
+d, dc = ds(cpl, prv_cpl, lower_is_better=True)
+c3.metric("💸 CPL", currency(cpl) if total_leads > 0 else "—", delta=d if total_leads > 0 else None, delta_color=dc)
+d, dc = ds(total_conv, prv_conv)
+c4.metric("💬 Conversas", number(total_conv) if total_conv > 0 else "—", delta=d if total_conv > 0 else None, delta_color=dc)
+d, dc = ds(cpc_conv, prv_cpc_cv, lower_is_better=True)
+c5.metric("💬 Custo/Conversa", currency(cpc_conv) if total_conv > 0 else "—", delta=d if total_conv > 0 else None, delta_color=dc)
 
-c6, c7, c8, c9, c10 = st.columns(5)
-for col_st, row in zip(
-    [c6, c7, c8, c9, c10],
-    [
-        metric("🎯 Leads", number, "leads"),
-        metric("🛒 Compras", number, "purchases"),
-        metric("💵 Receita", currency, "purchase_value"),
-        metric("💸 CPM", currency, "cpm", agg="mean", lower_is_better=True),
-        metric("🔁 ROAS", lambda x: f"{x:.2f}x", "roas", agg="mean"),
-    ],
-):
-    col_st.metric(row[0], row[1], delta=row[2], delta_color=row[3])
+# Linha 2: métricas de eficiência
+c6, c7, c8, c9 = st.columns(4)
+d, dc = ds(ctr, prv_ctr)
+c6.metric("📊 CTR médio", percent(ctr), delta=d, delta_color=dc)
+d, dc = ds(cpm, prv_cpm, lower_is_better=True)
+c7.metric("💸 CPM médio", currency(cpm), delta=d, delta_color=dc)
+d, dc = ds(cpc, prv_cpc, lower_is_better=True)
+c8.metric("🖱️ CPC médio", currency(cpc), delta=d, delta_color=dc)
+freq_d, freq_dc = ds(freq, prv_freq, lower_is_better=True)
+c9.metric("🔁 Frequência", f"{freq:.2f}x", delta=freq_d, delta_color=freq_dc)
+
+# ROAS — apenas se houver dados de e-commerce
+if df["purchase_value"].sum() > 0:
+    roas_val  = df["purchase_value"].sum() / total_spend if total_spend > 0 else 0
+    purchases = df["purchases"].sum()
+    cpa_val   = total_spend / purchases if purchases > 0 else 0
+    prv_rev   = df_prev["purchase_value"].sum() if not df_prev.empty else 0
+    prv_pur   = df_prev["purchases"].sum() if not df_prev.empty else 0
+    prv_roas  = prv_rev / prv_spend if prv_spend > 0 else 0
+    prv_cpa   = prv_spend / prv_pur if prv_pur > 0 else 0
+    with st.expander("📈 E-commerce / Vendas online (dados disponíveis)", expanded=False):
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        d, dc = ds(df["purchase_value"].sum(), prv_rev)
+        rc1.metric("💵 Receita", currency(df["purchase_value"].sum()), delta=d, delta_color=dc)
+        d, dc = ds(roas_val, prv_roas)
+        rc2.metric("🔁 ROAS", f"{roas_val:.2f}x", delta=d, delta_color=dc)
+        d, dc = ds(purchases, prv_pur)
+        rc3.metric("🛒 Compras", number(purchases), delta=d, delta_color=dc)
+        d, dc = ds(cpa_val, prv_cpa, lower_is_better=True)
+        rc4.metric("💸 CPA", currency(cpa_val), delta=d, delta_color=dc)
 
 st.divider()
 
 # ── Gráficos ───────────────────────────────────────────────────────────────────
 daily = (
     df.groupby("date")
-    .agg(spend=("spend", "sum"), impressions=("impressions", "sum"), clicks=("clicks", "sum"))
+    .agg(spend=("spend", "sum"), leads=("leads", "sum"), impressions=("impressions", "sum"), clicks=("clicks", "sum"))
     .reset_index()
 )
-daily_prev = df_prev.groupby("date").agg(spend=("spend", "sum")).reset_index() if not df_prev.empty else None
+daily["cpm"] = daily.apply(lambda r: r["spend"] / r["impressions"] * 1000 if r["impressions"] > 0 else 0, axis=1)
 
+daily_prev = (
+    df_prev.groupby("date").agg(spend=("spend", "sum"), impressions=("impressions", "sum")).reset_index()
+    if not df_prev.empty else None
+)
+if daily_prev is not None and not daily_prev.empty:
+    daily_prev["cpm"] = daily_prev.apply(lambda r: r["spend"] / r["impressions"] * 1000 if r["impressions"] > 0 else 0, axis=1)
+
+label_map = {"awareness": "Awareness", "traffic": "Tráfego", "leads": "Leads", "conversions": "Conversões", "other": "Outros"}
+
+st.markdown(section_header("Custo & Distribuição", "investimento ao longo do tempo e por objetivo"), unsafe_allow_html=True)
 col_a, col_b = st.columns(2)
 with col_a:
     st.plotly_chart(
@@ -198,30 +244,91 @@ with col_a:
     )
 with col_b:
     by_type = df.groupby("campaign_type")["spend"].sum().reset_index()
-    label_map = {
-        "awareness": "Awareness", "traffic": "Tráfego",
-        "leads": "Leads", "conversions": "Conversões", "other": "Outros",
-    }
     by_type["campaign_type"] = by_type["campaign_type"].map(label_map).fillna("Outros")
     st.plotly_chart(
         charts.donut(by_type["campaign_type"].tolist(), by_type["spend"].tolist(), "Investimento por tipo de campanha"),
         use_container_width=True,
     )
 
+st.markdown(section_header("Eficiência de Clique & Custo por Lead", "performance por campanha"), unsafe_allow_html=True)
 col_c, col_d = st.columns(2)
 with col_c:
+    ctr_camp = (
+        df.groupby("campaign_name")
+        .agg(clicks=("clicks", "sum"), impressions=("impressions", "sum"))
+        .reset_index()
+    )
+    ctr_camp = ctr_camp[ctr_camp["impressions"] > 0].copy()
+    ctr_camp["CTR (%)"] = ctr_camp["clicks"] / ctr_camp["impressions"] * 100
+    ctr_camp = ctr_camp.sort_values("CTR (%)", ascending=False).head(10)
+    ctr_camp = ctr_camp.rename(columns={"campaign_name": "Campanha"})
     st.plotly_chart(
-        charts.multiline(daily, "date", [("impressions", "Impressões"), ("clicks", "Cliques")], "Impressões vs Cliques"),
+        charts.bar(ctr_camp, "Campanha", "CTR (%)", "CTR por campanha (%)", color=charts.CYAN, horizontal=True),
         use_container_width=True,
     )
 with col_d:
-    top10 = (
-        df.groupby("campaign_name")["spend"].sum()
-        .sort_values(ascending=False).head(10).reset_index()
+    dfl = df[df["campaign_type"] == "leads"]
+    if not dfl.empty and dfl["leads"].sum() > 0:
+        cpl_camp = dfl.groupby("campaign_name").agg(spend=("spend", "sum"), leads=("leads", "sum")).reset_index()
+        cpl_camp = cpl_camp[cpl_camp["leads"] > 0].copy()
+        cpl_camp["CPL (R$)"] = cpl_camp["spend"] / cpl_camp["leads"]
+        cpl_camp = cpl_camp.sort_values("CPL (R$)").head(10)
+        cpl_camp = cpl_camp.rename(columns={"campaign_name": "Campanha"})
+        st.plotly_chart(
+            charts.bar_with_avg(cpl_camp, "Campanha", "CPL (R$)", "CPL por campanha de leads (R$)", color=charts.GREEN),
+            use_container_width=True,
+        )
+    else:
+        top10 = (
+            df.groupby("campaign_name")["spend"].sum()
+            .sort_values(ascending=False).head(10).reset_index()
+        )
+        top10.columns = ["Campanha", "Investimento (R$)"]
+        st.plotly_chart(
+            charts.bar(top10, "Campanha", "Investimento (R$)", "Top 10 campanhas por investimento", horizontal=True),
+            use_container_width=True,
+        )
+
+st.markdown(section_header("Leads & Frequência", "volume de leads e saturação de público"), unsafe_allow_html=True)
+col_e, col_f = st.columns(2)
+with col_e:
+    daily_leads_prev = (
+        df_prev.groupby("date").agg(leads=("leads", "sum")).reset_index()
+        if not df_prev.empty else None
     )
-    top10.columns = ["Campanha", "Investimento"]
     st.plotly_chart(
-        charts.bar(top10, "Campanha", "Investimento", "Top 10 campanhas por investimento", horizontal=True),
+        charts.line(daily, "date", "leads", "Leads ao longo do tempo", "Leads", color=charts.GREEN,
+                    prev_df=daily_leads_prev, prev_label="Leads período anterior"),
+        use_container_width=True,
+    )
+with col_f:
+    freq_camp = (
+        df.groupby("campaign_name")
+        .agg(impressions=("impressions", "sum"), reach=("reach", "sum"))
+        .reset_index()
+    )
+    freq_camp = freq_camp[freq_camp["reach"] > 0].copy()
+    freq_camp["Frequência"] = freq_camp["impressions"] / freq_camp["reach"]
+    freq_camp = freq_camp.sort_values("Frequência", ascending=False).head(10)
+    freq_camp = freq_camp.rename(columns={"campaign_name": "Campanha"})
+    st.plotly_chart(
+        charts.bar_freq(freq_camp, "Campanha", "Frequência", "Frequência por campanha"),
+        use_container_width=True,
+    )
+
+st.markdown(section_header("CPM & Distribuição de Leads", "evolução de custo por impressão e ranking"), unsafe_allow_html=True)
+col_g, col_h = st.columns(2)
+with col_g:
+    st.plotly_chart(
+        charts.line(daily, "date", "cpm", "CPM ao longo do tempo (R$)", "R$", color=charts.PURPLE,
+                    prev_df=daily_prev, prev_label="CPM período anterior"),
+        use_container_width=True,
+    )
+with col_h:
+    top5 = df.groupby("campaign_name")["leads"].sum().sort_values(ascending=False).head(5).reset_index()
+    top5.columns = ["Campanha", "Leads"]
+    st.plotly_chart(
+        charts.bar(top5, "Campanha", "Leads", "Top 5 campanhas por leads", color=charts.GREEN, horizontal=True),
         use_container_width=True,
     )
 
@@ -229,36 +336,57 @@ st.divider()
 
 # ── Tabela ─────────────────────────────────────────────────────────────────────
 with st.expander("📋 Ver tabela completa de campanhas"):
-    label_map2 = {
-        "awareness": "Awareness", "traffic": "Tráfego",
-        "leads": "Leads", "conversions": "Conversões", "other": "Outros",
-    }
+    label_map2 = {"awareness": "Awareness", "traffic": "Tráfego", "leads": "Leads", "conversions": "Conversões", "other": "Outros"}
     summary = df.groupby(["campaign_name", "campaign_type"]).agg(
-        Investimento=("spend", "sum"), Impressões=("impressions", "sum"),
-        Alcance=("reach", "sum"), Cliques=("clicks", "sum"),
-        Leads=("leads", "sum"), Conversas=("conversations", "sum"),
-        Compras=("purchases", "sum"), Receita=("purchase_value", "sum"),
+        Investimento=("spend", "sum"),
+        Impressões=("impressions", "sum"),
+        Alcance=("reach", "sum"),
+        Cliques=("clicks", "sum"),
+        Leads=("leads", "sum"),
+        Conversas=("conversations", "sum"),
     ).reset_index()
-    summary["ROAS"] = summary.apply(
-        lambda r: r["Receita"] / r["Investimento"] if r["Investimento"] > 0 else 0, axis=1
-    )
+
+    summary["CTR (%)"]    = summary.apply(lambda r: r["Cliques"] / r["Impressões"] * 100 if r["Impressões"] > 0 else 0, axis=1)
+    summary["CPM (R$)"]   = summary.apply(lambda r: r["Investimento"] / r["Impressões"] * 1000 if r["Impressões"] > 0 else 0, axis=1)
+    summary["CPC (R$)"]   = summary.apply(lambda r: r["Investimento"] / r["Cliques"] if r["Cliques"] > 0 else 0, axis=1)
+    summary["CPL (R$)"]   = summary.apply(lambda r: r["Investimento"] / r["Leads"] if r["Leads"] > 0 else 0, axis=1)
+    summary["Frequência"] = summary.apply(lambda r: r["Impressões"] / r["Alcance"] if r["Alcance"] > 0 else 0, axis=1)
+
+    if not df_prev.empty:
+        prev_agg = df_prev.groupby("campaign_name").agg(
+            prev_spend=("spend", "sum"), prev_leads=("leads", "sum")
+        ).reset_index()
+        prev_agg["cpl_prev"] = prev_agg.apply(lambda r: r["prev_spend"] / r["prev_leads"] if r["prev_leads"] > 0 else 0, axis=1)
+        summary = summary.merge(prev_agg[["campaign_name", "cpl_prev"]], on="campaign_name", how="left")
+        summary["cpl_prev"] = summary["cpl_prev"].fillna(0)
+        summary["Var. CPL"] = summary.apply(
+            lambda r: f"{((r['CPL (R$)'] - r['cpl_prev']) / r['cpl_prev'] * 100):+.0f}%"
+            if (r["cpl_prev"] > 0 and r["CPL (R$)"] > 0) else "—",
+            axis=1,
+        )
+        summary = summary.drop(columns=["cpl_prev"])
+    else:
+        summary["Var. CPL"] = "—"
+
     summary["campaign_type"] = summary["campaign_type"].map(label_map2).fillna("Outros")
     summary = (
         summary.rename(columns={"campaign_name": "Campanha", "campaign_type": "Tipo"})
+        .drop(columns=["Alcance"])
         .sort_values("Investimento", ascending=False)
     )
     st.dataframe(
         summary.style.format({
             "Investimento": lambda x: currency(x),
-            "Impressões": lambda x: number(x),
-            "Alcance": lambda x: number(x),
-            "Cliques": lambda x: number(x),
-            "Leads": lambda x: number(x),
-            "Conversas": lambda x: number(x),
-            "Compras": lambda x: number(x),
-            "Receita": lambda x: currency(x),
-            "ROAS": lambda x: f"{x:.2f}x",
+            "Impressões":   lambda x: number(x),
+            "Cliques":      lambda x: number(x),
+            "Leads":        lambda x: number(x),
+            "Conversas":    lambda x: number(x),
+            "CTR (%)":      lambda x: percent(x),
+            "CPM (R$)":     lambda x: currency(x),
+            "CPC (R$)":     lambda x: currency(x),
+            "CPL (R$)":     lambda x: currency(x) if x > 0 else "—",
+            "Frequência":   lambda x: f"{x:.2f}x",
         }),
         use_container_width=True,
-        height=380,
+        height=400,
     )
