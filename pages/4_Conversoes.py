@@ -45,6 +45,7 @@ if df.empty:
     st.stop()
 
 st.markdown(insight_box(top_insight(df_all, df_prev_all, "conversions")), unsafe_allow_html=True)
+st.page_link("pages/8_Campanhas.py", label="⚙️ Gerenciar campanhas deste período", icon="⚙️")
 
 # ── KPIs ───────────────────────────────────────────────────────────────────────
 def delta_show(cur, prv, lower_is_better=False):

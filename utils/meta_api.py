@@ -261,6 +261,60 @@ def _process_adset(raw: list) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def get_campaigns_management(account_id: str) -> list:
+    data = _get(f"{BASE_URL}/{account_id}/campaigns", {
+        "fields": "id,name,status,objective,daily_budget,lifetime_budget",
+        "limit": 200,
+    })
+    raw = _paginate(data)
+    return [c for c in raw if c.get("status") not in ("DELETED", "ARCHIVED")]
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_adsets_management(account_id: str) -> list:
+    data = _get(f"{BASE_URL}/{account_id}/adsets", {
+        "fields": "id,name,status,campaign_id,daily_budget,lifetime_budget",
+        "limit": 500,
+    })
+    raw = _paginate(data)
+    return [a for a in raw if a.get("status") not in ("DELETED", "ARCHIVED")]
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_ads_management(account_id: str) -> list:
+    data = _get(f"{BASE_URL}/{account_id}/ads", {
+        "fields": "id,name,status,adset_id,campaign_id",
+        "limit": 1000,
+    })
+    raw = _paginate(data)
+    return [a for a in raw if a.get("status") not in ("DELETED", "ARCHIVED")]
+
+
+def update_status(object_id: str, status: str) -> dict:
+    r = requests.post(f"{BASE_URL}/{object_id}", params={
+        "access_token": ACCESS_TOKEN,
+        "status": status,
+    })
+    data = r.json()
+    if "error" in data:
+        raise Exception(data["error"]["message"])
+    return data
+
+
+def update_budget(object_id: str, daily_budget: float = None, lifetime_budget: float = None) -> dict:
+    params = {"access_token": ACCESS_TOKEN}
+    if daily_budget is not None:
+        params["daily_budget"] = int(daily_budget * 100)
+    if lifetime_budget is not None:
+        params["lifetime_budget"] = int(lifetime_budget * 100)
+    r = requests.post(f"{BASE_URL}/{object_id}", params=params)
+    data = r.json()
+    if "error" in data:
+        raise Exception(data["error"]["message"])
+    return data
+
+
 def _process_ad(raw: list) -> pd.DataFrame:
     if not raw:
         return pd.DataFrame()

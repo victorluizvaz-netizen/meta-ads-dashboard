@@ -1,5 +1,8 @@
 import streamlit as st
-from utils.meta_api import get_adset_insights_with_comparison, get_insights_with_comparison
+from utils.meta_api import (
+    get_adset_insights_with_comparison, get_insights_with_comparison,
+    get_adsets_management, get_campaigns_management, update_status, update_budget,
+)
 from utils.formatters import currency, number, percent, delta_pct
 from utils.styles import css, section_header
 from utils.alerts import generate_alerts
@@ -217,3 +220,137 @@ for tab, (label, ctype) in zip(tabs, type_map):
     with tab:
         df_t = df if ctype is None else df[df["campaign_type"] == ctype]
         _render_tab(df_t, ctype)
+
+st.divider()
+
+# ── Controles de conjunto ─────────────────────────────────────────────────────
+STATUS_ICON = {"ACTIVE": "🟢", "PAUSED": "🟡", "WITH_ISSUES": "🔴"}
+BUDGET_LABEL = {"daily": "Diário", "lifetime": "Vitalício"}
+
+with st.expander("⚙️ Controles de Conjunto", expanded=False):
+    col_hdr, col_btn = st.columns([6, 1])
+    col_hdr.markdown("**Pausar, ativar ou ajustar orçamento por conjunto**")
+    if col_btn.button("🔄 Atualizar", key="refresh_adsets", use_container_width=True):
+        get_adsets_management.clear()
+        get_campaigns_management.clear()
+        st.rerun()
+
+    with st.spinner("Carregando conjuntos..."):
+        try:
+            adsets_mgmt = get_adsets_management(account_id)
+            camps_mgmt  = get_campaigns_management(account_id)
+        except Exception as e:
+            st.error(f"Erro ao carregar dados: {e}")
+            st.stop()
+
+    camp_budget = {
+        c["id"]: int(c.get("daily_budget") or 0) + int(c.get("lifetime_budget") or 0)
+        for c in camps_mgmt
+    }
+
+    def _adset_budget(a):
+        db = int(a.get("daily_budget") or 0)
+        lb = int(a.get("lifetime_budget") or 0)
+        if db > 0:
+            return "daily", db / 100
+        if lb > 0:
+            return "lifetime", lb / 100
+        return "abo", None
+
+    if selected:
+        camp_ids = {c["id"] for c in camps_mgmt if c["name"] in selected}
+        adsets_mgmt = [a for a in adsets_mgmt if a.get("campaign_id") in camp_ids]
+
+    if not adsets_mgmt:
+        st.info("Nenhum conjunto encontrado.")
+    else:
+        adset_labels = [
+            f"{STATUS_ICON.get(a['status'], '⚪')} {a['name']}" for a in adsets_mgmt
+        ]
+        sel_adset_idx = st.selectbox(
+            "Selecione o conjunto",
+            range(len(adset_labels)),
+            format_func=lambda i: adset_labels[i],
+            key="adset_sel",
+        )
+
+        if st.session_state.get("_last_adset_sel") != sel_adset_idx:
+            st.session_state.pop("_adset_confirm_status", None)
+            st.session_state.pop("_adset_confirm_budget", None)
+            st.session_state["_last_adset_sel"] = sel_adset_idx
+
+        a = adsets_mgmt[sel_adset_idx]
+        btype, bval = _adset_budget(a)
+        is_cbo = camp_budget.get(a.get("campaign_id"), 0) > 0
+
+        col_info, col_act = st.columns([3, 2])
+        with col_info:
+            st.markdown(f"**Conjunto:** {a['name']}")
+            st.markdown(f"**Status:** {STATUS_ICON.get(a['status'], '⚪')} `{a['status']}`")
+            if is_cbo:
+                st.markdown("**Orçamento:** Controlado pela campanha (CBO)")
+            elif bval:
+                st.markdown(f"**Orçamento {BUDGET_LABEL.get(btype, '')}:** {currency(bval)}")
+            else:
+                st.markdown("**Orçamento:** Não definido")
+
+        with col_act:
+            if a["status"] == "ACTIVE":
+                if st.button("⏸️ Pausar conjunto", type="primary", use_container_width=True, key="adset_pause"):
+                    st.session_state["_adset_confirm_status"] = {"id": a["id"], "name": a["name"], "new_status": "PAUSED"}
+            else:
+                if st.button("▶️ Ativar conjunto", type="primary", use_container_width=True, key="adset_activate"):
+                    st.session_state["_adset_confirm_status"] = {"id": a["id"], "name": a["name"], "new_status": "ACTIVE"}
+
+        if "_adset_confirm_status" in st.session_state:
+            cs = st.session_state["_adset_confirm_status"]
+            action = "pausar" if cs["new_status"] == "PAUSED" else "ativar"
+            st.warning(f"Confirma **{action}** o conjunto **{cs['name']}**?")
+            c1, c2, _ = st.columns([1, 1, 3])
+            if c1.button("✅ Confirmar", key="adset_yes_status"):
+                try:
+                    update_status(cs["id"], cs["new_status"])
+                    st.success(f"Conjunto {'pausado' if cs['new_status'] == 'PAUSED' else 'ativado'} com sucesso!")
+                    st.session_state.pop("_adset_confirm_status", None)
+                    get_adsets_management.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+            if c2.button("❌ Cancelar", key="adset_no_status"):
+                st.session_state.pop("_adset_confirm_status", None)
+                st.rerun()
+
+        if not is_cbo and bval is not None:
+            st.markdown(f"**Alterar orçamento {BUDGET_LABEL.get(btype, '')}**")
+            new_bval = st.number_input(
+                "Novo valor (R$)", min_value=1.0, value=float(bval),
+                step=1.0, format="%.2f", key="adset_budget_input",
+            )
+            if st.button("💾 Salvar orçamento", key="adset_save_budget"):
+                st.session_state["_adset_confirm_budget"] = {
+                    "id": a["id"], "name": a["name"], "budget_type": btype, "value": new_bval,
+                }
+
+            if "_adset_confirm_budget" in st.session_state:
+                cb = st.session_state["_adset_confirm_budget"]
+                st.warning(f"Confirma alterar orçamento de **{cb['name']}** para **{currency(cb['value'])}**?")
+                c1, c2, _ = st.columns([1, 1, 3])
+                if c1.button("✅ Confirmar", key="adset_yes_budget"):
+                    try:
+                        kwargs = (
+                            {"daily_budget": cb["value"]}
+                            if cb["budget_type"] == "daily"
+                            else {"lifetime_budget": cb["value"]}
+                        )
+                        update_budget(cb["id"], **kwargs)
+                        st.success("Orçamento atualizado com sucesso!")
+                        st.session_state.pop("_adset_confirm_budget", None)
+                        get_adsets_management.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
+                if c2.button("❌ Cancelar", key="adset_no_budget"):
+                    st.session_state.pop("_adset_confirm_budget", None)
+                    st.rerun()
+        elif is_cbo:
+            st.info("Orçamento controlado pela campanha (CBO). Ajuste na página **Gestão de Campanhas**.")

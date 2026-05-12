@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.meta_api import get_ad_insights
+from utils.meta_api import get_ad_insights, get_ads_management, update_status
 from utils.formatters import currency, number, percent
 from utils.styles import css, section_header
 from utils import charts
@@ -147,6 +147,77 @@ if not df_vol.empty and df_vol["ctr"].sum() > 0:
                      use_container_width=True)
 else:
     st.info("Volume insuficiente para comparativo (mínimo 500 impressões por anúncio).")
+
+st.divider()
+
+# ── Controles de anúncio ──────────────────────────────────────────────────────
+STATUS_ICON = {"ACTIVE": "🟢", "PAUSED": "🟡", "WITH_ISSUES": "🔴"}
+
+with st.expander("⚙️ Controles de Anúncio", expanded=False):
+    col_hdr, col_btn = st.columns([6, 1])
+    col_hdr.markdown("**Pausar ou ativar anúncios individualmente**")
+    if col_btn.button("🔄 Atualizar", key="refresh_ads", use_container_width=True):
+        get_ads_management.clear()
+        st.rerun()
+
+    with st.spinner("Carregando anúncios..."):
+        try:
+            ads_mgmt = get_ads_management(account_id)
+        except Exception as e:
+            st.error(f"Erro ao carregar anúncios: {e}")
+            st.stop()
+
+    if selected:
+        ad_ids_in_view = set(df["ad_id"].astype(str).tolist()) if "ad_id" in df.columns else set()
+        ads_mgmt = [a for a in ads_mgmt if a["id"] in ad_ids_in_view]
+
+    if not ads_mgmt:
+        st.info("Nenhum anúncio encontrado.")
+    else:
+        ad_labels = [f"{STATUS_ICON.get(a['status'], '⚪')} {a['name']}" for a in ads_mgmt]
+        sel_ad_idx = st.selectbox(
+            "Selecione o anúncio",
+            range(len(ad_labels)),
+            format_func=lambda i: ad_labels[i],
+            key="ad_sel",
+        )
+
+        if st.session_state.get("_last_ad_sel") != sel_ad_idx:
+            st.session_state.pop("_ad_confirm_status", None)
+            st.session_state["_last_ad_sel"] = sel_ad_idx
+
+        ad = ads_mgmt[sel_ad_idx]
+
+        col_info, col_act = st.columns([3, 2])
+        with col_info:
+            st.markdown(f"**Anúncio:** {ad['name']}")
+            st.markdown(f"**Status:** {STATUS_ICON.get(ad['status'], '⚪')} `{ad['status']}`")
+
+        with col_act:
+            if ad["status"] == "ACTIVE":
+                if st.button("⏸️ Pausar anúncio", type="primary", use_container_width=True, key="ad_pause"):
+                    st.session_state["_ad_confirm_status"] = {"id": ad["id"], "name": ad["name"], "new_status": "PAUSED"}
+            else:
+                if st.button("▶️ Ativar anúncio", type="primary", use_container_width=True, key="ad_activate"):
+                    st.session_state["_ad_confirm_status"] = {"id": ad["id"], "name": ad["name"], "new_status": "ACTIVE"}
+
+        if "_ad_confirm_status" in st.session_state:
+            cs = st.session_state["_ad_confirm_status"]
+            action = "pausar" if cs["new_status"] == "PAUSED" else "ativar"
+            st.warning(f"Confirma **{action}** o anúncio **{cs['name']}**?")
+            c1, c2, _ = st.columns([1, 1, 3])
+            if c1.button("✅ Confirmar", key="ad_yes_status"):
+                try:
+                    update_status(cs["id"], cs["new_status"])
+                    st.success(f"Anúncio {'pausado' if cs['new_status'] == 'PAUSED' else 'ativado'} com sucesso!")
+                    st.session_state.pop("_ad_confirm_status", None)
+                    get_ads_management.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro: {e}")
+            if c2.button("❌ Cancelar", key="ad_no_status"):
+                st.session_state.pop("_ad_confirm_status", None)
+                st.rerun()
 
 st.divider()
 
