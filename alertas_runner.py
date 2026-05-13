@@ -3,14 +3,11 @@
 Runner de alertas Meta Ads.
 Agendar via Windows Task Scheduler (setup_alertas.ps1).
 
-Verificações a cada ciclo (30 min):
-  - 70% do orçamento diário sem conversão → alerta imediato
-  - 100% do orçamento diário gasto       → alerta imediato
-  - CTR abaixo do mínimo                 → alerta imediato
-  - CPM acima do limite                  → alerta imediato
-  - Às 08:00 → relatório do dia anterior
-
-Deduplicação: cada alerta é enviado no máximo 1x por dia por campanha.
+Lógica de notificação:
+  - Alerta NOVO (condição apareceu agora)       → envia mensagem completa imediatamente
+  - Alerta PERSISTENTE (já foi notificado antes) → atualiza timestamp, sem reenvio
+  - Alerta RESOLVIDO (condição sumiu)            → remove do registro silenciosamente
+  - Às 08:00 → relatório do dia anterior + lista de alertas persistentes
 """
 import json
 import os
@@ -22,8 +19,7 @@ ROOT        = Path(__file__).parent
 CONFIG_PATH = ROOT / "config_alertas.json"
 LOG_PATH    = ROOT / "alertas_log.json"
 
-# Injeta o token Meta como variável de ambiente ANTES de importar meta_api_bg,
-# pois o token é lido em nível de módulo no momento do import.
+# Injeta token Meta como env var ANTES de importar meta_api_bg (lido em import time)
 def _bootstrap() -> dict:
     if not CONFIG_PATH.exists():
         raise FileNotFoundError(
@@ -46,49 +42,49 @@ from utils.whatsapp    import send_message
 from utils.alert_logic import check_alerts, build_daily_report
 
 
-def load_config() -> dict:
-    return _CONFIG
-
-
 def load_log() -> dict:
+    """
+    Estrutura do log:
+      {
+        "active":       { "<key>": {"ts_first": ..., "ts_last": ..., "msg": ..., "account_id": ...} },
+        "reports_sent": { "<account_id>_<date>": "<iso datetime>" }
+      }
+    """
     if LOG_PATH.exists():
         with open(LOG_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    return {}
+            data = json.load(f)
+        # Migração de formato antigo (chave plana) para novo formato
+        if "active" not in data:
+            data = {"active": {}, "reports_sent": {}}
+        return data
+    return {"active": {}, "reports_sent": {}}
 
 
 def save_log(log: dict):
-    cutoff = (datetime.today() - timedelta(days=14)).strftime("%Y-%m-%d")
-    cleaned = {
-        k: v for k, v in log.items()
-        if k[-10:] >= cutoff
-    }
     with open(LOG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cleaned, f, ensure_ascii=False, indent=2)
+        json.dump(log, f, ensure_ascii=False, indent=2)
 
 
 def is_report_window(report_time: str) -> bool:
-    """Verdadeiro se estamos dentro da janela de 30 min a partir do horário do relatório."""
     now = datetime.now()
     h, m = map(int, report_time.split(":"))
     target = now.replace(hour=h, minute=m, second=0, microsecond=0)
     return 0 <= (now - target).total_seconds() < 1800
 
 
-def log_tag(key: str) -> str:
-    """Retorna a data no final da chave de log (últimos 10 chars)."""
-    return key[-10:]
-
-
 def main():
-    config = load_config()
+    config = _CONFIG
     log    = load_log()
 
     evo         = config["evolution_api"]
     report_time = config.get("report_time", "08:00")
     today       = datetime.today().strftime("%Y-%m-%d")
     yesterday   = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+    now_iso     = datetime.now().isoformat()
     send_report = is_report_window(report_time)
+
+    active       = log["active"]
+    reports_sent = log["reports_sent"]
 
     for account in config.get("contas", []):
         account_id = account["account_id"]
@@ -96,57 +92,74 @@ def main():
         whatsapp   = account["whatsapp"]
         thresholds = account.get("thresholds", {})
 
-        print(f"\n[{label}] Iniciando verificação — {today}")
+        print(f"\n[{label}] Verificando — {datetime.now().strftime('%H:%M')}")
 
-        # Busca estrutura de orçamento das campanhas
         try:
             campaigns_budget = get_campaigns_bg(account_id)
         except Exception as e:
-            print(f"  ERRO ao buscar campanhas: {e}")
+            print(f"  ERRO campanhas: {e}")
             campaigns_budget = []
 
-        # ── Alertas em tempo real (dados de hoje) ─────────────────────────────
         try:
             insights_today = get_insights_bg(account_id, today)
         except Exception as e:
-            print(f"  ERRO ao buscar insights hoje: {e}")
+            print(f"  ERRO insights: {e}")
             insights_today = []
 
-        alerts = check_alerts(insights_today, campaigns_budget, thresholds, today)
-        for alert in alerts:
-            if alert["key"] in log:
-                continue  # já enviado hoje
-            ok = send_message(evo["base_url"], evo["instance"], evo["apikey"], whatsapp, alert["msg"])
-            status = "OK" if ok else "FALHA"
-            print(f"  [{status}] Alerta: {alert['key']}")
-            if ok:
-                log[alert["key"]] = {"ts": datetime.now().isoformat(), "msg": alert["msg"]}
+        # Condições atualmente ativas para esta conta
+        current_alerts = check_alerts(insights_today, campaigns_budget, thresholds)
+        current_keys   = {a["key"] for a in current_alerts}
 
-        # ── Relatório diário (dados de ontem, janela das 08:00) ───────────────
+        # ── Alertas desta conta que estavam no log ────────────────────────────
+        account_active_keys = {k for k, v in active.items() if v.get("account_id") == account_id}
+
+        # Novos: condição ativa agora mas ainda não estava no log
+        for alert in current_alerts:
+            if alert["key"] not in active:
+                ok = send_message(evo["base_url"], evo["instance"], evo["apikey"], whatsapp, alert["msg"])
+                status = "NOVO/OK" if ok else "NOVO/FALHA"
+                print(f"  [{status}] {alert['key']}")
+                if ok:
+                    active[alert["key"]] = {
+                        "ts_first":  now_iso,
+                        "ts_last":   now_iso,
+                        "msg":       alert["msg"],
+                        "account_id": account_id,
+                        "label":     label,
+                    }
+            else:
+                # Persistente: atualiza ts_last, não reenvia
+                active[alert["key"]]["ts_last"] = now_iso
+                print(f"  [PERSISTENTE] {alert['key']}")
+
+        # Resolvidos: estavam no log desta conta mas não aparecem mais
+        for key in list(account_active_keys):
+            if key not in current_keys:
+                del active[key]
+                print(f"  [RESOLVIDO] {key}")
+
+        # ── Relatório diário às 08:00 ─────────────────────────────────────────
         if send_report:
-            report_key = f"report_{account_id}_{today}"
-            if report_key not in log:
+            report_key = f"{account_id}_{today}"
+            if report_key not in reports_sent:
                 try:
                     insights_yesterday = get_insights_bg(account_id, yesterday)
                 except Exception as e:
-                    print(f"  ERRO ao buscar insights ontem: {e}")
+                    print(f"  ERRO insights ontem: {e}")
                     insights_yesterday = []
 
-                # Alertas enviados ontem para incluir no resumo
-                alerts_sent_yesterday = [
-                    v for k, v in log.items()
-                    if isinstance(v, dict) and "msg" in v
-                    and k[-10:] == yesterday
-                    and not k.startswith("report_")
-                ]
+                # Alertas ainda ativos (persistentes) desta conta para o relatório
+                persistent = [v for k, v in active.items() if v.get("account_id") == account_id]
 
-                report_text = build_daily_report(label, insights_yesterday, yesterday, alerts_sent_yesterday)
+                report_text = build_daily_report(label, insights_yesterday, yesterday, persistent)
                 ok = send_message(evo["base_url"], evo["instance"], evo["apikey"], whatsapp, report_text)
                 status = "OK" if ok else "FALHA"
                 print(f"  [{status}] Relatório diário ({yesterday})")
                 if ok:
-                    log[report_key] = {"ts": datetime.now().isoformat(), "msg": "relatorio"}
+                    reports_sent[report_key] = now_iso
 
+    log["active"]       = active
+    log["reports_sent"] = reports_sent
     save_log(log)
     print("\nConcluído.")
 
