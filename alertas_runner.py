@@ -13,29 +13,41 @@ Verificações a cada ciclo (30 min):
 Deduplicação: cada alerta é enviado no máximo 1x por dia por campanha.
 """
 import json
+import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT        = Path(__file__).parent
+CONFIG_PATH = ROOT / "config_alertas.json"
+LOG_PATH    = ROOT / "alertas_log.json"
+
+# Injeta o token Meta como variável de ambiente ANTES de importar meta_api_bg,
+# pois o token é lido em nível de módulo no momento do import.
+def _bootstrap() -> dict:
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(
+            f"config_alertas.json não encontrado em {ROOT}.\n"
+            "Copie config_alertas.example.json, preencha e salve como config_alertas.json."
+        )
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        cfg = json.load(f)
+    token = cfg.get("meta_access_token", "")
+    if token and token != "SEU_TOKEN_META_AQUI":
+        os.environ["META_ACCESS_TOKEN"] = token
+    return cfg
+
+_CONFIG = _bootstrap()
+
 sys.path.insert(0, str(ROOT))
 
 from utils.meta_api_bg import get_insights_bg, get_campaigns_bg
 from utils.whatsapp    import send_message
 from utils.alert_logic import check_alerts, build_daily_report
 
-CONFIG_PATH = ROOT / "config_alertas.json"
-LOG_PATH    = ROOT / "alertas_log.json"
-
 
 def load_config() -> dict:
-    if not CONFIG_PATH.exists():
-        raise FileNotFoundError(
-            f"config_alertas.json não encontrado em {ROOT}. "
-            "Copie config_alertas.json e preencha com seus dados."
-        )
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    return _CONFIG
 
 
 def load_log() -> dict:

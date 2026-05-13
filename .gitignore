@@ -5,3 +5,5 @@ __pycache__/
 .venv/
 venv/
 .streamlit/secrets.toml
+config_alertas.json
+alertas_log.json

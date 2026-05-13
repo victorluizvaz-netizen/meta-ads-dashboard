@@ -1,4 +1,6 @@
 {
+  "meta_access_token": "SEU_TOKEN_META_AQUI",
+
   "evolution_api": {
     "base_url": "https://SUA-URL-EVOLUTION.com",
     "instance": "NOME_DA_INSTANCIA",
@@ -12,17 +14,6 @@
       "account_id": "act_XXXXXXXXX",
       "label": "Nome do Cliente A",
       "whatsapp": "5511999999999",
-      "thresholds": {
-        "budget_warning_pct": 70,
-        "ctr_min": 0.5,
-        "cpm_max": 50.0,
-        "cpl_max": null
-      }
-    },
-    {
-      "account_id": "act_YYYYYYYYY",
-      "label": "Nome do Cliente B",
-      "whatsapp": "5511888888888",
       "thresholds": {
         "budget_warning_pct": 70,
         "ctr_min": 0.5,
