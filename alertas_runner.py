@@ -65,6 +65,11 @@ def save_log(log: dict):
         json.dump(log, f, ensure_ascii=False, indent=2)
 
 
+ACTIVE_HOURS = (6, 23)  # roda das 06:00 às 22:59; fora disso o script sai imediatamente
+
+def is_active_hours() -> bool:
+    return ACTIVE_HOURS[0] <= datetime.now().hour < ACTIVE_HOURS[1]
+
 def is_report_window(report_time: str) -> bool:
     now = datetime.now()
     h, m = map(int, report_time.split(":"))
@@ -73,6 +78,10 @@ def is_report_window(report_time: str) -> bool:
 
 
 def main():
+    if not is_active_hours():
+        print(f"Fora do horário ativo ({ACTIVE_HOURS[0]:02d}:00–{ACTIVE_HOURS[1]:02d}:00). Encerrando.")
+        return
+
     config = _CONFIG
     log    = load_log()
 

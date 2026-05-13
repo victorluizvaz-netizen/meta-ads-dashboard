@@ -27,14 +27,13 @@ schtasks /create `
     /sc MINUTE `
     /mo 60 `
     /st 06:00 `
-    /et 23:00 `
     /f `
     /rl HIGHEST | Out-Null
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Tarefa '$TaskName' criada com sucesso!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Horario  : 06:00 ate 23:00, a cada 60 minutos"
+    Write-Host "Horario  : a cada 60 minutos (controle de janela feito pelo script)"
     Write-Host "Relatorio: diario as 08:00 (dados do dia anterior)"
     Write-Host ""
     Write-Host "Para testar agora:"
