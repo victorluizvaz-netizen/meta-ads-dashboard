@@ -39,7 +39,7 @@ sys.path.insert(0, str(ROOT))
 
 from utils.meta_api_bg import get_insights_bg, get_campaigns_bg
 from utils.whatsapp    import send_message
-from utils.alert_logic import check_alerts, build_daily_report
+from utils.alert_logic import check_alerts, build_daily_report, build_persistent_summary
 
 
 def load_log() -> dict:
@@ -69,7 +69,7 @@ def is_report_window(report_time: str) -> bool:
     now = datetime.now()
     h, m = map(int, report_time.split(":"))
     target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-    return 0 <= (now - target).total_seconds() < 1800
+    return 0 <= (now - target).total_seconds() < 3600
 
 
 def main():
@@ -137,6 +137,13 @@ def main():
             if key not in current_keys:
                 del active[key]
                 print(f"  [RESOLVIDO] {key}")
+
+        # Resumo de persistentes a cada ciclo (sem reenviar os alertas completos)
+        persistent = [v for k, v in active.items() if v.get("account_id") == account_id]
+        if persistent:
+            summary = build_persistent_summary(label, persistent)
+            ok = send_message(evo["base_url"], evo["instance"], evo["apikey"], whatsapp, summary)
+            print(f"  [{'OK' if ok else 'FALHA'}] Resumo: {len(persistent)} persistente(s)")
 
         # ── Relatório diário às 08:00 ─────────────────────────────────────────
         if send_report:

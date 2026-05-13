@@ -176,3 +176,27 @@ def build_daily_report(label: str, insights: list, date_str: str, persistent_ale
         lines.append("✅ Nenhum alerta ativo")
 
     return "\n".join(lines)
+
+
+def build_persistent_summary(label: str, persistent_alerts: list) -> str:
+    """
+    Resumo compacto dos alertas ainda ativos, enviado a cada ciclo.
+    persistent_alerts: lista de dicts do log["active"] desta conta.
+    """
+    now_fmt = datetime.now().strftime("%H:%M")
+    lines = [
+        f"⏳ *{len(persistent_alerts)} alerta(s) não resolvido(s) — {label}*",
+        f"Verificação: {now_fmt}",
+        "",
+    ]
+    for a in persistent_alerts:
+        first_line = a["msg"].split("\n")[0]
+        since = ""
+        if "ts_first" in a:
+            try:
+                dt = datetime.fromisoformat(a["ts_first"])
+                since = f" (desde {dt.strftime('%d/%m %H:%M')})"
+            except Exception:
+                pass
+        lines.append(f"• {first_line}{since}")
+    return "\n".join(lines)
