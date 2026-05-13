@@ -28,6 +28,7 @@ with st.sidebar:
     account_options = {f"{a['name']}": a["id"] for a in accounts}
     selected_label = st.selectbox("Conta de anúncios", list(account_options.keys()))
     account_id = account_options[selected_label]
+    st.caption(f"ID: `{account_id}`")
     st.divider()
 
     st.caption("Período de análise")
