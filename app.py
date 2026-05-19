@@ -42,13 +42,12 @@ with st.sidebar:
     until = st.date_input("Até", value=datetime.today() - timedelta(days=1))
     n_days = (until - since).days + 1
 
-    comp_mode = st.selectbox(
+    st.selectbox(
         "Comparar com",
         options=["previous", "month", "year"],
         format_func=lambda x: {"previous": f"▸ {n_days} dias anteriores", "month": "▸ Mês anterior", "year": "▸ Mesmo período (ano anterior)"}[x],
         key="_comp_mode",
     )
-    st.session_state["_comp_mode"] = comp_mode
 
 st.session_state["account_id"] = account_id
 st.session_state["since"] = str(since)
