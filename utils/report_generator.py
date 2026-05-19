@@ -72,9 +72,12 @@ def _fig_interactive(fig, first_flag: list) -> str:
 
 
 def _fig_png(fig) -> str:
-    png = fig.to_image(format="png", width=880, height=340, scale=1.5)
-    b64 = base64.b64encode(png).decode()
-    return f'<div style="margin:8pt 0;"><img src="data:image/png;base64,{b64}" width="520" /></div>'
+    try:
+        png = fig.to_image(format="png", width=880, height=340, scale=1.5)
+        b64 = base64.b64encode(png).decode()
+        return f'<div style="margin:8pt 0;"><img src="data:image/png;base64,{b64}" width="520" /></div>'
+    except Exception:
+        return '<p style="color:#95A5A6;font-size:9pt;font-style:italic;">[Gráfico não disponível neste ambiente]</p>'
 
 
 # ── Tabelas de detalhamento por campanha ───────────────────────────────────────
