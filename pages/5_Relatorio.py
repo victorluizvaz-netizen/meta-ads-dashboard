@@ -48,15 +48,8 @@ with col_form:
 with col_preview:
     st.markdown(section_header("Prévia do relatório", "O relatório será gerado com os dados do período selecionado."), unsafe_allow_html=True)
 
-    if not gerar:
-        st.markdown("""
-        <div style="background:white;border:1px solid #E4E6EB;border-radius:12px;padding:2rem;text-align:center;color:#65676B;">
-            <p style="font-size:2.5rem;margin-bottom:0.5rem;">📊</p>
-            <p style="font-weight:600;margin-bottom:0.5rem;">Relatório ainda não gerado</p>
-            <p style="font-size:0.85rem;">Preencha os dados à esquerda e clique em <strong>Gerar Relatório</strong>.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
+    # ── Geração (só quando botão clicado) ────────────────────────────────────
+    if gerar:
         if not client_name.strip():
             st.error("Preencha o nome do cliente antes de gerar.")
             st.stop()
@@ -81,7 +74,6 @@ with col_preview:
                 st.warning("Nenhum dado encontrado para o período selecionado.")
                 st.stop()
 
-            # Busca dados de conjuntos e criativos quando necessário
             df_adsets = None
             needs_adsets = any(s in sections for s in ("Alertas e Sugestões", "Conjuntos de Anúncios"))
             if needs_adsets:
@@ -102,24 +94,73 @@ with col_preview:
                     df_ads = None
 
             html = generate_report(
-                df=df,
-                df_prev=df_prev,
-                client_name=client_name.strip(),
-                since=since,
-                until=until,
-                sections=sections,
-                notes=notes,
-                df_adsets=df_adsets,
-                df_ads=df_ads,
+                df=df, df_prev=df_prev, client_name=client_name.strip(),
+                since=since, until=until, sections=sections, notes=notes,
+                df_adsets=df_adsets, df_ads=df_ads,
             )
+
+            pdf_bytes = None
+            try:
+                pdf_bytes = generate_pdf_report(
+                    df=df, df_prev=df_prev, client_name=client_name.strip(),
+                    since=since, until=until, sections=sections, notes=notes,
+                    df_adsets=df_adsets, df_ads=df_ads,
+                )
+            except Exception:
+                pass
+
+        # Preview stats (sem guardar DataFrames inteiros)
+        _preview = {}
+        for s in sections:
+            if s == "Visão Geral":
+                _preview[s] = f"{df['campaign_name'].nunique()} campanhas · R$ {df['spend'].sum():,.2f} investidos"
+            elif s == "Alertas e Sugestões":
+                from utils.alerts import generate_alerts
+                _preview[s] = f"{len(generate_alerts(df, df_prev, df_adsets=df_adsets))} alertas gerados"
+            elif s == "Conjuntos de Anúncios":
+                n_as = len(df_adsets) if df_adsets is not None and not df_adsets.empty else 0
+                _preview[s] = f"{n_as} conjuntos incluídos"
+            elif s == "Criativos":
+                n_ads = len(df_ads) if df_ads is not None and not df_ads.empty else 0
+                _preview[s] = f"{n_ads} anúncios incluídos"
+            else:
+                type_map = {"Awareness": "awareness", "Tráfego": "traffic", "Leads": "leads", "Conversões": "conversions"}
+                ct  = type_map.get(s)
+                dfs = df[df["campaign_type"] == ct] if ct else None
+                _preview[s] = f"{dfs['campaign_name'].nunique()} campanhas" if (dfs is not None and not dfs.empty) else "*(sem dados no período)*"
+
+        # Salva no session_state para sobreviver a reruns
+        st.session_state["_rpt_cache"] = {
+            "html":        html,
+            "pdf_bytes":   pdf_bytes,
+            "base_name":   f"relatorio_{client_name.strip().lower().replace(' ', '_')}_{since}_{until}",
+            "client_name": client_name.strip(),
+            "since":       since,
+            "until":       until,
+            "account_id":  account_id,
+            "preview":     _preview,
+        }
+
+    # ── Exibição (persiste nos reruns) ────────────────────────────────────────
+    _rpt = st.session_state.get("_rpt_cache")
+
+    if not _rpt:
+        st.markdown("""
+        <div style="background:rgba(19,14,39,0.8);border:1px solid rgba(168,85,247,0.15);border-radius:12px;
+        padding:2rem;text-align:center;color:#8B7EAF;">
+            <p style="font-size:2.5rem;margin-bottom:0.5rem;">📊</p>
+            <p style="font-weight:600;margin-bottom:0.5rem;color:#F1ECF8;">Relatório ainda não gerado</p>
+            <p style="font-size:0.85rem;">Preencha os dados à esquerda e clique em <strong>Gerar Relatório</strong>.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        html      = _rpt["html"]
+        pdf_bytes = _rpt["pdf_bytes"]
+        base_name = _rpt["base_name"]
 
         st.success("✅ Relatório gerado com sucesso!")
 
-        base_name = f"relatorio_{client_name.strip().lower().replace(' ', '_')}_{since}_{until}"
-
         b64_html = base64.b64encode(html.encode("utf-8")).decode()
-
-        # Link com blob URL montado na carga — evita cross-origin (srcdoc = null origin)
         stv1.html(f"""
         <style>
           a.btn{{display:block;width:100%;padding:0.6rem 1rem;background:#6C63FF;
@@ -149,7 +190,6 @@ with col_preview:
         st.caption("Só o relatório é aberto · use Ctrl+P para salvar como PDF")
 
         col_html, col_pdf = st.columns(2)
-
         with col_html:
             st.download_button(
                 label="⬇️ Baixar HTML",
@@ -159,44 +199,29 @@ with col_preview:
                 use_container_width=True,
             )
             st.caption("Alternativa: salvar arquivo")
-
         with col_pdf:
-            with st.spinner("Gerando PDF..."):
-                try:
-                    pdf_bytes = generate_pdf_report(
-                        df=df, df_prev=df_prev,
-                        client_name=client_name.strip(),
-                        since=since, until=until,
-                        sections=sections, notes=notes,
-                        df_adsets=df_adsets,
-                        df_ads=df_ads,
-                    )
-                    st.download_button(
-                        label="⬇️ Baixar PDF",
-                        data=pdf_bytes,
-                        file_name=f"{base_name}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True,
-                        type="primary",
-                    )
-                    st.caption("Abre em qualquer dispositivo")
-                except ImportError as e:
-                    if "pdf_unavailable" in str(e):
-                        st.info("PDF não disponível nesta versão online. Baixe o HTML e abra no navegador para imprimir como PDF.")
-                    else:
-                        st.error(f"Erro ao gerar PDF: {e}")
-                except Exception as e:
-                    st.error(f"Erro ao gerar PDF: {e}")
+            if pdf_bytes:
+                st.download_button(
+                    label="⬇️ Baixar PDF",
+                    data=pdf_bytes,
+                    file_name=f"{base_name}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary",
+                )
+                st.caption("Abre em qualquer dispositivo")
+            else:
+                st.info("PDF não disponível nesta versão online. Use Ctrl+P no relatório HTML.")
 
         # ── Compartilhar painel no WhatsApp ──────────────────────────────────
         _cfg = load_config()
-        _acct_conf = next((c for c in _cfg.get("contas", []) if c["account_id"] == account_id), None)
+        _acct_conf = next((c for c in _cfg.get("contas", []) if c["account_id"] == _rpt["account_id"]), None)
         if _acct_conf:
             _public_url   = _cfg.get("public_url", "").rstrip("/")
             _client_token = _acct_conf.get("client_token", "")
             if _public_url and _client_token:
                 _link = f"{_public_url}/Cliente?token={_client_token}"
-                _msg  = f"📊 *Relatório Meta Ads — {client_name.strip()}*\n📅 {since} a {until}\n\n👉 {_link}"
+                _msg  = f"📊 *Relatório Meta Ads — {_rpt['client_name']}*\n📅 {_rpt['since']} a {_rpt['until']}\n\n👉 {_link}"
 
                 _whatsapps = _acct_conf.get("whatsapps") or ([_acct_conf["whatsapp"]] if _acct_conf.get("whatsapp") else [])
                 _options   = [f"+{n}" for n in _whatsapps] + ["Outro número..."]
@@ -224,26 +249,5 @@ with col_preview:
 
         st.divider()
         st.markdown("**Prévia do conteúdo incluído:**")
-        for s in sections:
-            type_map = {"Awareness": "awareness", "Tráfego": "traffic", "Leads": "leads", "Conversões": "conversions"}
-            if s == "Visão Geral":
-                count = df["campaign_name"].nunique()
-                spend = df["spend"].sum()
-                st.markdown(f"- **{s}** — {count} campanhas · R$ {spend:,.2f} investidos")
-            elif s == "Alertas e Sugestões":
-                from utils.alerts import generate_alerts
-                n = len(generate_alerts(df, df_prev, df_adsets=df_adsets))
-                st.markdown(f"- **{s}** — {n} alertas gerados")
-            elif s == "Conjuntos de Anúncios":
-                n_as = len(df_adsets) if df_adsets is not None and not df_adsets.empty else 0
-                st.markdown(f"- **{s}** — {n_as} conjuntos incluídos")
-            elif s == "Criativos":
-                n_ads = len(df_ads) if df_ads is not None and not df_ads.empty else 0
-                st.markdown(f"- **{s}** — {n_ads} anúncios incluídos")
-            elif s in type_map:
-                ct = type_map[s]
-                dfs = df[df["campaign_type"] == ct]
-                if not dfs.empty:
-                    st.markdown(f"- **{s}** — {dfs['campaign_name'].nunique()} campanhas")
-                else:
-                    st.markdown(f"- **{s}** — *(sem dados no período)*")
+        for s, desc in _rpt.get("preview", {}).items():
+            st.markdown(f"- **{s}** — {desc}")
