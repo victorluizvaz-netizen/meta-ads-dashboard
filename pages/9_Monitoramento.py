@@ -64,6 +64,7 @@ snap_all  = log.get("leads_snapshot", {})
 today_str = datetime.now().strftime("%Y-%m-%d")
 contas    = cfg.get("contas", [])
 evo       = cfg.get("evolution_api", {})
+public_url = cfg.get("public_url", "").rstrip("/")
 
 # ── Status global ──────────────────────────────────────────────────────────────
 n_leads = sum(1 for c in contas if c.get("monitor_leads"))
@@ -246,23 +247,23 @@ for idx, account in enumerate(contas):
 
     client_token = account.get("client_token", "")
 
-    try:
-        host     = st.context.headers.get("host", "localhost:8501")
-        base_url = f"http://{host}"
-    except Exception:
-        base_url = "http://localhost:8501"
-
     if client_token:
-        client_url = f"{base_url}/Cliente?token={client_token}"
-        st.markdown(
-            f'<div style="background:rgba(168,85,247,0.07);border:1px solid rgba(168,85,247,0.20);'
-            f'border-radius:10px;padding:0.7rem 1rem;margin:0.4rem 0;">'
-            f'<div style="color:#8B7EAF;font-size:0.70rem;font-weight:600;text-transform:uppercase;'
-            f'letter-spacing:0.08em;margin-bottom:0.35rem;">🔗 Link ativo</div>'
-            f'<code style="color:#C084FC;font-size:0.83rem;word-break:break-all;">{client_url}</code>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        if not public_url:
+            st.warning("⚠️ Configure `public_url` no `config_alertas.json` para gerar o link correto.")
+            client_url = None
+        else:
+            client_url = f"{public_url}/Cliente?token={client_token}"
+
+        if client_url:
+            st.markdown(
+                f'<div style="background:rgba(168,85,247,0.07);border:1px solid rgba(168,85,247,0.20);'
+                f'border-radius:10px;padding:0.7rem 1rem;margin:0.4rem 0;">'
+                f'<div style="color:#8B7EAF;font-size:0.70rem;font-weight:600;text-transform:uppercase;'
+                f'letter-spacing:0.08em;margin-bottom:0.35rem;">🔗 Link ativo</div>'
+                f'<code style="color:#C084FC;font-size:0.83rem;word-break:break-all;">{client_url}</code>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
         col_regen, col_revoke, _spc = st.columns([1, 1, 4])
         if col_regen.button("🔄 Regenerar", key=f"regen_{account_id}", use_container_width=True,
                             help="Gera um novo token — o link anterior deixa de funcionar"):
