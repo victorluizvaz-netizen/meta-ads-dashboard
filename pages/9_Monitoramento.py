@@ -1,5 +1,7 @@
 import secrets
 import streamlit as st
+import plotly.graph_objects as go
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from utils.styles import css, section_header
@@ -292,3 +294,49 @@ st.caption(
     "⚙️ O runner `alertas_runner.py` verifica novos leads a cada execução do Task Scheduler. "
     "Recomendado: a cada 15 minutos entre 06:00 e 23:00."
 )
+
+# ── Histórico de performance ───────────────────────────────────────────────────
+history_all = log.get("history", {})
+if history_all:
+    st.markdown(
+        section_header("Histórico de performance", "evolução diária registrada pelo runner"),
+        unsafe_allow_html=True,
+    )
+    acct_options = {a.get("label", a["account_id"]): a["account_id"] for a in contas}
+    sel_label = st.selectbox("Conta", list(acct_options.keys()), key="hist_acct")
+    sel_id    = acct_options[sel_label]
+    hist      = history_all.get(sel_id, {})
+
+    if hist:
+        df_h = pd.DataFrame([
+            {"data": k, **v} for k, v in sorted(hist.items())
+        ])
+        df_h["data"] = pd.to_datetime(df_h["data"])
+
+        metric = st.radio("Métrica", ["spend", "leads", "conversations", "cpl"],
+                          format_func=lambda x: {"spend": "Investimento (R$)", "leads": "Leads",
+                                                  "conversations": "Conversas", "cpl": "CPL (R$)"}[x],
+                          horizontal=True, key="hist_metric")
+
+        df_plot = df_h.dropna(subset=[metric])
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df_plot["data"], y=df_plot[metric],
+            mode="lines+markers",
+            line=dict(color="#A855F7", width=2),
+            marker=dict(color="#EC4899", size=6),
+            fill="tozeroy",
+            fillcolor="rgba(168,85,247,0.08)",
+            hovertemplate="%{x|%d/%m}<br>%{y:.2f}<extra></extra>",
+        ))
+        fig.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=0, r=0, t=10, b=0), height=220,
+            xaxis=dict(showgrid=False, color="#7B6EA8"),
+            yaxis=dict(gridcolor="#1C1236", color="#7B6EA8"),
+            font=dict(color="#D4B0FF"),
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.caption(f"{len(df_h)} dias registrados | último: {df_h['data'].max().strftime('%d/%m/%Y')}")
+    else:
+        st.caption("Nenhum dado histórico ainda para esta conta. O runner irá registrar a partir do próximo ciclo.")

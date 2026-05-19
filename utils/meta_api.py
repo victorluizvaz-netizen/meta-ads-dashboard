@@ -91,13 +91,29 @@ def _paginate(response):
     return results
 
 
-def get_previous_period(since: str, until: str) -> tuple:
+def _shift_months(d, months: int):
+    import calendar
+    m = d.month + months
+    y = d.year + (m - 1) // 12
+    m = ((m - 1) % 12) + 1
+    day = min(d.day, calendar.monthrange(y, m)[1])
+    return d.replace(year=y, month=m, day=day)
+
+
+def get_previous_period(since: str, until: str, mode: str = "previous") -> tuple:
     d_since = datetime.strptime(since, "%Y-%m-%d")
     d_until = datetime.strptime(until, "%Y-%m-%d")
     n_days = (d_until - d_since).days + 1
-    prev_until = d_since - timedelta(days=1)
-    prev_since = prev_until - timedelta(days=n_days - 1)
-    return str(prev_since.date()), str(prev_until.date())
+    if mode == "month":
+        ps = _shift_months(d_since, -1)
+        pu = _shift_months(d_until, -1)
+    elif mode == "year":
+        ps = d_since.replace(year=d_since.year - 1)
+        pu = d_until.replace(year=d_until.year - 1)
+    else:
+        pu = d_since - timedelta(days=1)
+        ps = pu - timedelta(days=n_days - 1)
+    return str(ps.date()), str(pu.date())
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -121,9 +137,12 @@ def get_insights(account_id: str, since: str, until: str) -> pd.DataFrame:
     return _process(_paginate(data))
 
 
-def get_insights_with_comparison(account_id: str, since: str, until: str):
+def get_insights_with_comparison(account_id: str, since: str, until: str,
+                                  prev_since: str = None, prev_until: str = None):
     df_current = get_insights(account_id, since, until)
-    prev_since, prev_until = get_previous_period(since, until)
+    if not prev_since or not prev_until:
+        mode = st.session_state.get("_comp_mode", "previous")
+        prev_since, prev_until = get_previous_period(since, until, mode)
     df_prev = get_insights(account_id, prev_since, prev_until)
     return df_current, df_prev, prev_since, prev_until
 
@@ -142,7 +161,8 @@ def get_adset_insights(account_id: str, since: str, until: str) -> pd.DataFrame:
 
 def get_adset_insights_with_comparison(account_id: str, since: str, until: str):
     df_current = get_adset_insights(account_id, since, until)
-    prev_since, prev_until = get_previous_period(since, until)
+    mode = st.session_state.get("_comp_mode", "previous")
+    prev_since, prev_until = get_previous_period(since, until, mode)
     df_prev = get_adset_insights(account_id, prev_since, prev_until)
     return df_current, df_prev, prev_since, prev_until
 

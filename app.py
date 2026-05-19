@@ -12,6 +12,9 @@ st.markdown(css(), unsafe_allow_html=True)
 from utils.client_guard import redirect_if_client
 redirect_if_client()
 
+from utils.auth import require_login
+require_login()
+
 # ── Sidebar: conta e período ────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📊 Meta Ads")
@@ -38,7 +41,14 @@ with st.sidebar:
     since = st.date_input("De", value=datetime.today() - timedelta(days=29))
     until = st.date_input("Até", value=datetime.today() - timedelta(days=1))
     n_days = (until - since).days + 1
-    st.caption(f"📅 {n_days} dias | comparando com {n_days} dias anteriores")
+
+    comp_mode = st.selectbox(
+        "Comparar com",
+        options=["previous", "month", "year"],
+        format_func=lambda x: {"previous": f"▸ {n_days} dias anteriores", "month": "▸ Mês anterior", "year": "▸ Mesmo período (ano anterior)"}[x],
+        key="_comp_mode",
+    )
+    st.session_state["_comp_mode"] = comp_mode
 
 st.session_state["account_id"] = account_id
 st.session_state["since"] = str(since)

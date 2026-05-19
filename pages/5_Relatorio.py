@@ -1,8 +1,10 @@
 import base64
+import urllib.parse
 import streamlit as st
 import streamlit.components.v1 as stv1
 from utils.meta_api import get_insights_with_comparison, get_adset_insights, get_ad_insights
 from utils.report_generator import generate_report, generate_pdf_report
+from utils.config_loader import load_config
 from utils.styles import css, section_header
 
 st.set_page_config(page_title="Gerar Relatório | Meta Ads", page_icon="📄", layout="wide")
@@ -185,6 +187,25 @@ with col_preview:
                         st.error(f"Erro ao gerar PDF: {e}")
                 except Exception as e:
                     st.error(f"Erro ao gerar PDF: {e}")
+
+        # ── Compartilhar painel no WhatsApp ──────────────────────────────────
+        _cfg = load_config()
+        _acct_conf = next((c for c in _cfg.get("contas", []) if c["account_id"] == account_id), None)
+        if _acct_conf:
+            _public_url   = _cfg.get("public_url", "").rstrip("/")
+            _client_token = _acct_conf.get("client_token", "")
+            _whatsapps    = _acct_conf.get("whatsapps") or ([_acct_conf["whatsapp"]] if _acct_conf.get("whatsapp") else [])
+            if _public_url and _client_token and _whatsapps:
+                _link = f"{_public_url}/Cliente?token={_client_token}"
+                _msg  = f"📊 *Relatório Meta Ads — {client_name.strip()}*\n📅 {since} a {until}\n\n👉 {_link}"
+                _wa   = f"https://wa.me/{_whatsapps[0]}?text={urllib.parse.quote(_msg)}"
+                st.markdown(
+                    f'<a href="{_wa}" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;'
+                    f'background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);color:#4ADE80;'
+                    f'border-radius:8px;padding:0.5rem 1rem;font-weight:600;text-decoration:none;font-size:0.9rem;">'
+                    f'📲 Enviar painel do cliente no WhatsApp</a>',
+                    unsafe_allow_html=True,
+                )
 
         st.divider()
         st.markdown("**Prévia do conteúdo incluído:**")

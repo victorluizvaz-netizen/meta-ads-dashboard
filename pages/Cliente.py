@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 from utils.config_loader import load_config
 from utils.meta_api import get_insights_with_comparison
@@ -60,6 +61,12 @@ label      = account.get("label", account_id)
 
 st.session_state["_is_client"]    = True
 st.session_state["_client_token"] = token
+
+# Auto-refresh a cada 5 minutos
+components.html(
+    '<script>setTimeout(function(){window.top.location.reload();},300000);</script>',
+    height=0,
+)
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:

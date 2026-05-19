@@ -163,6 +163,20 @@ def main():
                 print(f"  [LEAD/{'OK' if ok else 'FALHA'}] {la['msg'][:60].replace(chr(10), ' ')}")
             log.setdefault("leads_snapshot", {})[account_id] = build_snapshot(insights_today)
 
+        # ── Snapshot diário de métricas (histórico) ──────────────────────────
+        if insights_today:
+            total_spend = sum(r.get("spend", 0) for r in insights_today)
+            total_leads = sum(r.get("leads", 0) for r in insights_today)
+            total_conv  = sum(r.get("conversations", 0) for r in insights_today)
+            total_imp   = sum(r.get("impressions", 0) for r in insights_today)
+            log.setdefault("history", {}).setdefault(account_id, {})[today] = {
+                "spend":         round(total_spend, 2),
+                "leads":         int(total_leads),
+                "conversations": int(total_conv),
+                "impressions":   int(total_imp),
+                "cpl":           round(total_spend / total_leads, 2) if total_leads > 0 else None,
+            }
+
         # ── Condicional (a cada 60 min): alertas de performance ──────────────
         if not run_full:
             try:
