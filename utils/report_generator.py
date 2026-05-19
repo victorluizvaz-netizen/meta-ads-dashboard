@@ -845,16 +845,24 @@ def generate_report(df, df_prev, client_name, since, until, sections, notes="", 
 
 
 def generate_pdf_report(df, df_prev, client_name, since, until, sections, notes="", df_adsets=None, df_ads=None) -> bytes:
+    body     = _pdf_body(df, df_prev, sections, notes, df_adsets=df_adsets, df_ads=df_ads)
+    html_str = _wrap(body, client_name, since, until, for_pdf=True)
+
+    # WeasyPrint — funciona no Linux (Cloud). Não requer GTK a partir da v60.
+    try:
+        from weasyprint import HTML
+        return HTML(string=html_str).write_pdf()
+    except Exception:
+        pass
+
+    # xhtml2pdf — funciona no Windows (local). Fallback se WeasyPrint indisponível.
     try:
         from xhtml2pdf import pisa
-    except ImportError:
-        raise ImportError("pdf_unavailable")
+        buf = BytesIO()
+        status = pisa.CreatePDF(html_str, dest=buf, encoding="utf-8")
+        if not status.err:
+            return buf.getvalue()
+    except Exception:
+        pass
 
-    body = _pdf_body(df, df_prev, sections, notes, df_adsets=df_adsets, df_ads=df_ads)
-    html = _wrap(body, client_name, since, until, for_pdf=True)
-
-    buf = BytesIO()
-    status = pisa.CreatePDF(html, dest=buf, encoding="utf-8")
-    if status.err:
-        raise RuntimeError(f"xhtml2pdf: {status.err} erros ao gerar PDF")
-    return buf.getvalue()
+    raise ImportError("pdf_unavailable")
