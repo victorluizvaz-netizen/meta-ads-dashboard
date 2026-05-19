@@ -1,10 +1,10 @@
-import json
 import secrets
 import streamlit as st
 from pathlib import Path
 from datetime import datetime
 from utils.styles import css, section_header
 from utils.whatsapp import send_message
+from utils.config_loader import load_config, save_config as _save_config
 
 st.set_page_config(page_title="Monitoramento | Meta Ads", page_icon="📱", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
@@ -12,20 +12,11 @@ st.markdown(css(), unsafe_allow_html=True)
 from utils.client_guard import redirect_if_client
 redirect_if_client()
 
-CONFIG_PATH = Path(__file__).parent.parent / "config_alertas.json"
-LOG_PATH    = Path(__file__).parent.parent / "alertas_log.json"
+LOG_PATH = Path(__file__).parent.parent / "alertas_log.json"
 
 
 def _load_config() -> dict:
-    if not CONFIG_PATH.exists():
-        return {}
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _save_config(cfg: dict):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return load_config()
 
 
 @st.cache_data(ttl=15)

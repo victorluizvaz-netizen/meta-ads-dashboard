@@ -1,7 +1,6 @@
-import json
 import streamlit as st
 from datetime import datetime, timedelta
-from pathlib import Path
+from utils.config_loader import load_config
 from utils.meta_api import get_insights_with_comparison
 from utils.formatters import currency, number, percent, delta_pct, top_insight
 from utils.styles import css, section_header, insight_box
@@ -19,15 +18,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-CONFIG_PATH = Path(__file__).parent.parent / "config_alertas.json"
-
-
 @st.cache_data(ttl=300)
 def _load_config() -> dict:
-    if not CONFIG_PATH.exists():
-        return {}
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    return load_config()
 
 
 # ── Validação do token ─────────────────────────────────────────────────────────
