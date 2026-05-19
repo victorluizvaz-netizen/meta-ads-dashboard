@@ -178,6 +178,72 @@ def build_daily_report(label: str, insights: list, date_str: str, persistent_ale
     return "\n".join(lines)
 
 
+def check_lead_increment(
+    current: list,
+    snapshot: dict,
+    monitor_leads: bool,
+    monitor_conversations: bool,
+) -> list:
+    """
+    Compara leads/conversas atuais com o snapshot anterior.
+    Retorna alertas apenas para incrementos reais.
+    snapshot vazio ({}) = primeira execução do dia → estabelece baseline sem alertar.
+    """
+    if not (monitor_leads or monitor_conversations):
+        return []
+
+    leads_snap = snapshot.get("leads")       # None = primeira execução (sem alert)
+    conv_snap  = snapshot.get("conversations")
+    alerts     = []
+    now_fmt    = datetime.now().strftime("%H:%M")
+
+    for row in current:
+        cid  = row["campaign_id"]
+        name = row["campaign_name"]
+
+        if monitor_leads and leads_snap is not None:
+            old   = leads_snap.get(cid, 0)
+            cur   = int(row["leads"])
+            delta = cur - old
+            if delta > 0:
+                plural = "leads" if delta > 1 else "lead"
+                alerts.append({
+                    "msg": (
+                        f"🎯 *{delta} novo{'s' if delta > 1 else ''} {plural}!*\n"
+                        f"Campanha: _{name}_\n"
+                        f"Total hoje: {cur} {plural}\n"
+                        f"⏰ {now_fmt}"
+                    )
+                })
+
+        if monitor_conversations and conv_snap is not None:
+            old   = conv_snap.get(cid, 0)
+            cur   = int(row["conversations"])
+            delta = cur - old
+            if delta > 0:
+                plural = "conversas" if delta > 1 else "conversa"
+                alerts.append({
+                    "msg": (
+                        f"💬 *{delta} nova{'s' if delta > 1 else ''} {plural} iniciada{'s' if delta > 1 else ''}!*\n"
+                        f"Campanha: _{name}_\n"
+                        f"Total hoje: {cur} {plural}\n"
+                        f"⏰ {now_fmt}"
+                    )
+                })
+
+    return alerts
+
+
+def build_snapshot(current: list) -> dict:
+    """Gera snapshot dos contadores atuais para comparação no próximo ciclo."""
+    return {
+        "date":          datetime.now().strftime("%Y-%m-%d"),
+        "ts":            datetime.now().isoformat(),
+        "leads":         {r["campaign_id"]: int(r["leads"])         for r in current},
+        "conversations": {r["campaign_id"]: int(r["conversations"]) for r in current},
+    }
+
+
 def build_persistent_summary(label: str, persistent_alerts: list) -> str:
     """
     Resumo compacto dos alertas ainda ativos, enviado a cada ciclo.

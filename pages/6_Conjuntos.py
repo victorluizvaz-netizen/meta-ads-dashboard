@@ -11,6 +11,9 @@ from utils import charts
 st.set_page_config(page_title="Conjuntos de Anúncios | Meta Ads", page_icon="🗂️", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
 
+from utils.client_guard import redirect_if_client
+redirect_if_client()
+
 account_id = st.session_state.get("account_id")
 since      = st.session_state.get("since")
 until      = st.session_state.get("until")
@@ -50,6 +53,37 @@ else:
 if df.empty:
     st.warning("Nenhum dado para os filtros selecionados.")
     st.stop()
+
+# ── Filtro de conjuntos ─────────────────────────────────────────────────────
+all_adsets = sorted(df["adset_name"].unique().tolist())
+
+_ADJ = "_adset_ms"
+if _ADJ not in st.session_state:
+    st.session_state[_ADJ] = []
+
+col_f, col_fa, col_fc = st.columns([4, 1, 1])
+with col_f:
+    sel_adsets = st.multiselect(
+        "Filtrar conjuntos",
+        options=all_adsets,
+        key=_ADJ,
+        placeholder=f"Buscar conjunto... ({len(all_adsets)} disponíveis)",
+        label_visibility="collapsed",
+    )
+if col_fa.button("✓ Todos", key="adset_sel_all", use_container_width=True):
+    st.session_state[_ADJ] = all_adsets
+    st.rerun()
+if col_fc.button("✕ Limpar", key="adset_clr", use_container_width=True):
+    st.session_state[_ADJ] = []
+    st.rerun()
+
+if sel_adsets:
+    df = df[df["adset_name"].isin(sel_adsets)].copy()
+    if not df_prev.empty and "adset_name" in df_prev.columns:
+        df_prev = df_prev[df_prev["adset_name"].isin(sel_adsets)].copy()
+    st.caption(f"🔍 {len(sel_adsets)} de {len(all_adsets)} conjuntos selecionados")
+
+st.divider()
 
 # ── Alertas (usa dados de campanha do cache + dados de conjunto) ────────────
 try:

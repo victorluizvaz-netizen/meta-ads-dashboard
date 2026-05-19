@@ -9,6 +9,9 @@ from utils.styles import css
 st.set_page_config(page_title="Gestão de Campanhas | Meta Ads", page_icon="⚙️", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
 
+from utils.client_guard import redirect_if_client
+redirect_if_client()
+
 account_id = st.session_state.get("account_id")
 if not account_id:
     st.warning("⚠️ Volte à página principal e selecione uma conta.")

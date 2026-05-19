@@ -7,6 +7,9 @@ from utils.styles import css, insight_box
 st.set_page_config(page_title="Leads | Meta Ads", page_icon="🎯", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
 
+from utils.client_guard import redirect_if_client
+redirect_if_client()
+
 account_id = st.session_state.get("account_id")
 since = st.session_state.get("since")
 until = st.session_state.get("until")

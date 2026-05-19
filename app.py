@@ -9,6 +9,9 @@ from utils.styles import css, insight_box, section_header, warning_box
 st.set_page_config(page_title="Meta Ads Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 st.markdown(css(), unsafe_allow_html=True)
 
+from utils.client_guard import redirect_if_client
+redirect_if_client()
+
 # ── Sidebar: conta e período ────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📊 Meta Ads")
@@ -66,20 +69,30 @@ with st.sidebar:
     st.divider()
     st.caption("Filtro de campanhas")
 
-    prev_sel = [c for c in st.session_state.get("selected_campaigns", []) if c in all_campaigns]
+    _CAMP_KEY = "_camp_ms"
+    if _CAMP_KEY not in st.session_state:
+        st.session_state[_CAMP_KEY] = [c for c in st.session_state.get("selected_campaigns", []) if c in all_campaigns]
+
+    _ca, _cc = st.columns(2)
+    if _ca.button("✓ Todas", key="btn_sel_all", use_container_width=True):
+        st.session_state[_CAMP_KEY] = all_campaigns
+        st.rerun()
+    if _cc.button("✕ Limpar", key="btn_clr_sel", use_container_width=True):
+        st.session_state[_CAMP_KEY] = []
+        st.rerun()
 
     selected_campaigns = st.multiselect(
         "campanhas",
         options=all_campaigns,
-        default=prev_sel,
-        placeholder=f"Todas ({len(all_campaigns)})",
+        key=_CAMP_KEY,
+        placeholder=f"Buscar campanha... ({len(all_campaigns)} no total)",
         label_visibility="collapsed",
     )
 
     if selected_campaigns:
         st.caption(f"🎯 {len(selected_campaigns)} de {len(all_campaigns)} selecionadas")
     else:
-        st.caption(f"📋 {len(all_campaigns)} campanhas")
+        st.caption(f"📋 Mostrando todas ({len(all_campaigns)})")
 
     st.divider()
     st.caption("Token válido por 60 dias.")

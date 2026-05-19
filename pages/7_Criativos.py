@@ -7,6 +7,9 @@ from utils import charts
 st.set_page_config(page_title="Criativos | Meta Ads", page_icon="🎨", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
 
+from utils.client_guard import redirect_if_client
+redirect_if_client()
+
 account_id = st.session_state.get("account_id")
 since      = st.session_state.get("since")
 until      = st.session_state.get("until")
@@ -42,6 +45,54 @@ else:
 if df.empty:
     st.warning("Nenhum dado para os filtros selecionados.")
     st.stop()
+
+# ── Filtros locais (conjunto e anúncio) ──────────────────────────────────────
+all_adsets_c = sorted(df["adset_name"].unique().tolist()) if "adset_name" in df.columns else []
+all_ads_c    = sorted(df["ad_name"].unique().tolist())
+
+_ADC_KEY = "_criativo_adset_ms"
+_ADA_KEY = "_criativo_ad_ms"
+if _ADC_KEY not in st.session_state:
+    st.session_state[_ADC_KEY] = []
+if _ADA_KEY not in st.session_state:
+    st.session_state[_ADA_KEY] = []
+
+col_f1, col_f2, col_clr = st.columns([2, 2, 1])
+with col_f1:
+    sel_adsets_c = st.multiselect(
+        "Conjunto",
+        options=all_adsets_c,
+        key=_ADC_KEY,
+        placeholder=f"Buscar conjunto... ({len(all_adsets_c)} disponíveis)",
+    )
+with col_f2:
+    sel_ads_c = st.multiselect(
+        "Anúncio",
+        options=all_ads_c,
+        key=_ADA_KEY,
+        placeholder=f"Buscar anúncio... ({len(all_ads_c)} disponíveis)",
+    )
+if col_clr.button("✕ Limpar", key="criativo_clr_all", use_container_width=True):
+    st.session_state[_ADC_KEY] = []
+    st.session_state[_ADA_KEY] = []
+    st.rerun()
+
+if sel_adsets_c:
+    df = df[df["adset_name"].isin(sel_adsets_c)].copy()
+if sel_ads_c:
+    df = df[df["ad_name"].isin(sel_ads_c)].copy()
+
+if df.empty:
+    st.warning("Nenhum anúncio encontrado com os filtros aplicados.")
+    st.stop()
+
+_filter_parts = []
+if sel_adsets_c: _filter_parts.append(f"{len(sel_adsets_c)} conjunto(s)")
+if sel_ads_c:    _filter_parts.append(f"{len(sel_ads_c)} anúncio(s)")
+if _filter_parts:
+    st.caption(f"🔍 Filtrando por: {', '.join(_filter_parts)}")
+
+st.divider()
 
 # Colunas derivadas
 df["roas_v"] = df.apply(lambda r: r["purchase_value"] / r["spend"] if r["spend"] > 0 else 0, axis=1)
