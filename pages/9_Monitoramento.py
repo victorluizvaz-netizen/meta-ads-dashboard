@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from utils.styles import css, section_header
-from utils.whatsapp import send_message
+from utils.whatsapp import send_message, send_document
 from utils.config_loader import load_config, save_config as _save_config
 
 st.set_page_config(page_title="Monitoramento | Meta Ads", page_icon="📱", layout="wide")
@@ -195,6 +195,13 @@ for idx, account in enumerate(contas):
             if cleaned.isdigit() and len(cleaned) >= 10:
                 if cleaned not in st.session_state[nums_key]:
                     st.session_state[nums_key].append(cleaned)
+                    # Envia link do painel automaticamente se já houver token ativo
+                    if client_url and evo.get("base_url"):
+                        send_message(
+                            evo["base_url"], evo["instance"], evo["apikey"], cleaned,
+                            f"👋 Olá! Seu painel de acompanhamento de anúncios está disponível.\n\n"
+                            f"📊 Acesse aqui: {client_url}\n\nO link é exclusivo para a sua conta. Guarde-o com segurança.",
+                        )
                     st.rerun()
                 else:
                     st.warning("Número já cadastrado.")
@@ -248,15 +255,24 @@ for idx, account in enumerate(contas):
     st.markdown(section_header("Acesso de cliente", "link exclusivo de visualização — sem acesso a outras contas"), unsafe_allow_html=True)
 
     client_token = account.get("client_token", "")
+    client_url   = f"{public_url}/Cliente?token={client_token}" if (public_url and client_token) else None
+
+    def _send_panel_link(url: str, nums: list):
+        """Envia o link do painel via Evolution API para todos os números da lista."""
+        if not evo.get("base_url") or not nums:
+            return
+        msg = (
+            f"👋 Olá! Seu painel de acompanhamento de anúncios está disponível.\n\n"
+            f"📊 Acesse aqui: {url}\n\n"
+            f"O link é exclusivo para a sua conta. Guarde-o com segurança."
+        )
+        for n in nums:
+            send_message(evo["base_url"], evo["instance"], evo["apikey"], n, msg)
 
     if client_token:
         if not public_url:
             st.warning("⚠️ Configure `public_url` no `config_alertas.json` para gerar o link correto.")
-            client_url = None
         else:
-            client_url = f"{public_url}/Cliente?token={client_token}"
-
-        if client_url:
             st.markdown(
                 f'<div style="background:rgba(168,85,247,0.07);border:1px solid rgba(168,85,247,0.20);'
                 f'border-radius:10px;padding:0.7rem 1rem;margin:0.4rem 0;">'
@@ -266,7 +282,8 @@ for idx, account in enumerate(contas):
                 f'</div>',
                 unsafe_allow_html=True,
             )
-        col_regen, col_revoke, _spc = st.columns([1, 1, 4])
+
+        col_regen, col_revoke, col_send, _spc = st.columns([1, 1, 1, 3])
         if col_regen.button("🔄 Regenerar", key=f"regen_{account_id}", use_container_width=True,
                             help="Gera um novo token — o link anterior deixa de funcionar"):
             cfg["contas"][idx]["client_token"] = secrets.token_urlsafe(8)
@@ -279,13 +296,33 @@ for idx, account in enumerate(contas):
             _save_config(cfg)
             st.success("Acesso revogado.")
             st.rerun()
+        if client_url and col_send.button("📲 Enviar link", key=f"send_link_{account_id}",
+                                          use_container_width=True, help="Envia o link do painel para os números cadastrados"):
+            nums = st.session_state[nums_key]
+            if not nums:
+                st.warning("Nenhum número cadastrado para envio.")
+            elif not evo.get("base_url"):
+                st.error("Evolution API não configurada.")
+            else:
+                _send_panel_link(client_url, nums)
+                st.success(f"Link enviado para {len(nums)} número(s)!")
     else:
         st.caption("Nenhum link ativo para esta conta.")
         col_gen, _spc = st.columns([2, 4])
         if col_gen.button("🔗 Gerar link de acesso", key=f"gen_{account_id}", use_container_width=True):
-            cfg["contas"][idx]["client_token"] = secrets.token_urlsafe(8)
+            new_token = secrets.token_urlsafe(8)
+            cfg["contas"][idx]["client_token"] = new_token
             _save_config(cfg)
-            st.success("Link gerado! Copie o endereço acima e compartilhe com o cliente.")
+            new_url = f"{public_url}/Cliente?token={new_token}" if public_url else None
+            if new_url:
+                nums = st.session_state[nums_key]
+                if nums and evo.get("base_url"):
+                    _send_panel_link(new_url, nums)
+                    st.success("Link gerado e enviado automaticamente para os números cadastrados!")
+                else:
+                    st.success("Link gerado! Copie o endereço acima e compartilhe com o cliente.")
+            else:
+                st.success("Link gerado!")
             st.rerun()
 
     st.divider()

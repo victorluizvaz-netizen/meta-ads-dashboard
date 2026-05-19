@@ -1,10 +1,10 @@
 import base64
-import urllib.parse
 import streamlit as st
 import streamlit.components.v1 as stv1
 from utils.meta_api import get_insights_with_comparison, get_adset_insights, get_ad_insights
 from utils.report_generator import generate_report, generate_pdf_report
 from utils.config_loader import load_config
+from utils.whatsapp import send_document
 from utils.styles import css, section_header
 
 st.set_page_config(page_title="Gerar Relatório | Meta Ads", page_icon="📄", layout="wide")
@@ -213,21 +213,17 @@ with col_preview:
             else:
                 st.info("PDF não disponível nesta versão online. Use Ctrl+P no relatório HTML.")
 
-        # ── Compartilhar painel no WhatsApp ──────────────────────────────────
-        _cfg = load_config()
-        _acct_conf = next((c for c in _cfg.get("contas", []) if c["account_id"] == _rpt["account_id"]), None)
-        if _acct_conf:
-            _public_url   = _cfg.get("public_url", "").rstrip("/")
-            _client_token = _acct_conf.get("client_token", "")
-            if _public_url and _client_token:
-                _link = f"{_public_url}/Cliente?token={_client_token}"
-                _msg  = f"📊 *Relatório Meta Ads — {_rpt['client_name']}*\n📅 {_rpt['since']} a {_rpt['until']}\n\n👉 {_link}"
-
+        # ── Enviar PDF via WhatsApp ───────────────────────────────────────────
+        if pdf_bytes:
+            _cfg      = load_config()
+            _evo      = _cfg.get("evolution_api", {})
+            _acct_conf = next((c for c in _cfg.get("contas", []) if c["account_id"] == _rpt["account_id"]), None)
+            if _acct_conf and _evo.get("base_url"):
                 _whatsapps = _acct_conf.get("whatsapps") or ([_acct_conf["whatsapp"]] if _acct_conf.get("whatsapp") else [])
                 _options   = [f"+{n}" for n in _whatsapps] + ["Outro número..."]
 
-                st.markdown("**📲 Enviar painel no WhatsApp**")
-                _col_sel, _col_inp = st.columns([2, 2])
+                st.markdown("**📲 Enviar PDF pelo WhatsApp**")
+                _col_sel, _col_inp, _col_btn = st.columns([2, 2, 1])
                 with _col_sel:
                     _sel = st.selectbox("Destinatário", _options, key="wa_dest_sel", label_visibility="collapsed")
                 with _col_inp:
@@ -235,17 +231,20 @@ with col_preview:
                     if _sel == "Outro número...":
                         _custom = st.text_input("Número", placeholder="5549999999999",
                                                 key="wa_dest_custom", label_visibility="collapsed")
-
-                _num = _custom.strip().replace("+", "").replace(" ", "").replace("-", "") if _sel == "Outro número..." else _sel.replace("+", "")
-                if _num:
-                    _wa = f"https://wa.me/{_num}?text={urllib.parse.quote(_msg)}"
-                    st.markdown(
-                        f'<a href="{_wa}" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;'
-                        f'background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);color:#4ADE80;'
-                        f'border-radius:8px;padding:0.5rem 1rem;font-weight:600;text-decoration:none;font-size:0.9rem;">'
-                        f'📲 Abrir WhatsApp</a>',
-                        unsafe_allow_html=True,
-                    )
+                _num = (_custom.strip().replace("+", "").replace(" ", "").replace("-", "")
+                        if _sel == "Outro número..." else _sel.replace("+", ""))
+                with _col_btn:
+                    st.markdown("<div style='padding-top:0.3rem'></div>", unsafe_allow_html=True)
+                    if st.button("📤 Enviar", key="wa_send_pdf", use_container_width=True, disabled=not _num):
+                        _caption = f"📊 Relatório Meta Ads — {_rpt['client_name']}\n📅 {_rpt['since']} a {_rpt['until']}"
+                        _ok = send_document(
+                            _evo["base_url"], _evo["instance"], _evo["apikey"],
+                            _num, pdf_bytes, f"{base_name}.pdf", _caption,
+                        )
+                        if _ok:
+                            st.success(f"✅ PDF enviado para +{_num}!")
+                        else:
+                            st.error("Falha ao enviar. Verifique a Evolution API e o número.")
 
         st.divider()
         st.markdown("**Prévia do conteúdo incluído:**")
