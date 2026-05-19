@@ -27,6 +27,29 @@ INSIGHT_FIELDS = ",".join([
     "actions", "action_values",
 ])
 
+INSIGHT_FIELDS_FULL = ",".join([
+    "campaign_id", "campaign_name", "objective",
+    "impressions", "reach", "frequency", "spend",
+    "clicks", "unique_clicks", "ctr", "cpc", "cpm", "cpp",
+    "actions", "action_values",
+    "video_play_actions", "video_thruplay_watched_actions",
+])
+
+ADSET_FIELDS_FULL = ",".join([
+    "adset_id", "adset_name", "campaign_id", "campaign_name", "objective",
+    "impressions", "reach", "frequency", "spend",
+    "clicks", "unique_clicks", "ctr", "cpc", "cpm", "cpp",
+    "actions", "action_values",
+    "video_play_actions", "video_thruplay_watched_actions",
+])
+
+AD_FIELDS_FULL = ",".join([
+    "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id", "campaign_name", "objective",
+    "impressions", "reach", "spend",
+    "clicks", "ctr", "cpc", "cpm",
+    "actions", "action_values",
+])
+
 
 def _load_toml(path: str) -> dict:
     try:
@@ -108,6 +131,190 @@ def get_campaigns_bg(account_id: str) -> list:
         "limit": 200,
     })
     return [c for c in _paginate(data) if c.get("status") not in ("DELETED", "ARCHIVED")]
+
+
+def get_insights_for_report(account_id: str, since: str, until: str):
+    """Insights completos para geração de relatório (nível campanha, granularidade diária)."""
+    import pandas as pd
+    data = _api_get(f"{BASE_URL}/{account_id}/insights", {
+        "fields": INSIGHT_FIELDS_FULL,
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
+        "level": "campaign",
+        "time_increment": 1,
+        "limit": 500,
+    })
+    return _process_full(_paginate(data))
+
+
+def get_adset_insights_for_report(account_id: str, since: str, until: str):
+    """Insights de conjuntos de anúncios para relatório."""
+    data = _api_get(f"{BASE_URL}/{account_id}/insights", {
+        "fields": ADSET_FIELDS_FULL,
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
+        "level": "adset",
+        "time_increment": "all_days",
+        "limit": 500,
+    })
+    return _process_adset_full(_paginate(data))
+
+
+def get_ad_insights_for_report(account_id: str, since: str, until: str):
+    """Insights de anúncios para relatório."""
+    data = _api_get(f"{BASE_URL}/{account_id}/insights", {
+        "fields": AD_FIELDS_FULL,
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
+        "level": "ad",
+        "time_increment": "all_days",
+        "limit": 500,
+    })
+    return _process_ad_full(_paginate(data))
+
+
+def _process_full(raw: list):
+    import pandas as pd
+    if not raw:
+        return pd.DataFrame()
+    rows = []
+    for r in raw:
+        actions = {a["action_type"]: float(a["value"]) for a in r.get("actions", [])}
+        values  = {a["action_type"]: float(a["value"]) for a in r.get("action_values", [])}
+        leads     = actions.get("lead", 0) or actions.get("onsite_conversion.lead_grouped", 0)
+        purchases = actions.get("purchase", 0) + actions.get("offsite_conversion.fb_pixel_purchase", 0)
+        rev       = values.get("purchase", 0) + values.get("offsite_conversion.fb_pixel_purchase", 0)
+        spend     = float(r.get("spend", 0))
+        conversations = (
+            actions.get("onsite_conversion.messaging_conversation_started_7d", 0)
+            or actions.get("onsite_conversion.messaging_first_reply", 0)
+        )
+        vp = r.get("video_play_actions", [])
+        tp = r.get("video_thruplay_watched_actions", [])
+        rows.append({
+            "date":          r.get("date_start"),
+            "campaign_id":   r.get("campaign_id"),
+            "campaign_name": r.get("campaign_name"),
+            "objective":     r.get("objective", ""),
+            "campaign_type": OBJECTIVE_MAP.get(r.get("objective", ""), "other"),
+            "impressions":   int(r.get("impressions", 0)),
+            "reach":         int(r.get("reach", 0)),
+            "frequency":     float(r.get("frequency", 0)),
+            "spend":         spend,
+            "clicks":        int(r.get("clicks", 0)),
+            "unique_clicks": int(r.get("unique_clicks", 0)),
+            "ctr":           float(r.get("ctr", 0)),
+            "cpc":           float(r.get("cpc") or 0),
+            "cpm":           float(r.get("cpm", 0)),
+            "cpp":           float(r.get("cpp") or 0),
+            "link_clicks":   actions.get("link_click", 0),
+            "landing_page_views": actions.get("landing_page_view", 0),
+            "post_engagement": actions.get("post_engagement", 0),
+            "leads":         leads,
+            "purchases":     purchases,
+            "purchase_value": rev,
+            "conversations": conversations,
+            "roas":          rev / spend if spend > 0 else 0,
+            "cpl":           spend / leads if leads > 0 else 0,
+            "cpa":           spend / purchases if purchases > 0 else 0,
+            "cpc_conv":      spend / conversations if conversations > 0 else 0,
+            "video_plays":   float(vp[0]["value"]) if vp else 0,
+            "thruplays":     float(tp[0]["value"]) if tp else 0,
+        })
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    return df
+
+
+def _process_adset_full(raw: list):
+    import pandas as pd
+    if not raw:
+        return pd.DataFrame()
+    rows = []
+    for r in raw:
+        actions = {a["action_type"]: float(a["value"]) for a in r.get("actions", [])}
+        values  = {a["action_type"]: float(a["value"]) for a in r.get("action_values", [])}
+        leads     = actions.get("lead", 0) or actions.get("onsite_conversion.lead_grouped", 0)
+        purchases = actions.get("purchase", 0) + actions.get("offsite_conversion.fb_pixel_purchase", 0)
+        rev       = values.get("purchase", 0) + values.get("offsite_conversion.fb_pixel_purchase", 0)
+        spend     = float(r.get("spend", 0))
+        conversations = (
+            actions.get("onsite_conversion.messaging_conversation_started_7d", 0)
+            or actions.get("onsite_conversion.messaging_first_reply", 0)
+        )
+        vp = r.get("video_play_actions", [])
+        tp = r.get("video_thruplay_watched_actions", [])
+        rows.append({
+            "adset_id":      r.get("adset_id"),
+            "adset_name":    r.get("adset_name"),
+            "campaign_id":   r.get("campaign_id"),
+            "campaign_name": r.get("campaign_name"),
+            "objective":     r.get("objective", ""),
+            "campaign_type": OBJECTIVE_MAP.get(r.get("objective", ""), "other"),
+            "impressions":   int(r.get("impressions", 0)),
+            "reach":         int(r.get("reach", 0)),
+            "frequency":     float(r.get("frequency", 0)),
+            "spend":         spend,
+            "clicks":        int(r.get("clicks", 0)),
+            "unique_clicks": int(r.get("unique_clicks", 0)),
+            "ctr":           float(r.get("ctr", 0)),
+            "cpc":           float(r.get("cpc") or 0),
+            "cpm":           float(r.get("cpm", 0)),
+            "cpp":           float(r.get("cpp") or 0),
+            "link_clicks":   actions.get("link_click", 0),
+            "landing_page_views": actions.get("landing_page_view", 0),
+            "leads":         leads,
+            "purchases":     purchases,
+            "purchase_value": rev,
+            "conversations": conversations,
+            "roas":          rev / spend if spend > 0 else 0,
+            "cpl":           spend / leads if leads > 0 else 0,
+            "cpa":           spend / purchases if purchases > 0 else 0,
+            "cpc_conv":      spend / conversations if conversations > 0 else 0,
+            "video_plays":   float(vp[0]["value"]) if vp else 0,
+            "thruplays":     float(tp[0]["value"]) if tp else 0,
+        })
+    return pd.DataFrame(rows)
+
+
+def _process_ad_full(raw: list):
+    import pandas as pd
+    if not raw:
+        return pd.DataFrame()
+    rows = []
+    for r in raw:
+        actions = {a["action_type"]: float(a["value"]) for a in r.get("actions", [])}
+        values  = {a["action_type"]: float(a["value"]) for a in r.get("action_values", [])}
+        leads     = actions.get("lead", 0) or actions.get("onsite_conversion.lead_grouped", 0)
+        purchases = actions.get("purchase", 0) + actions.get("offsite_conversion.fb_pixel_purchase", 0)
+        rev       = values.get("purchase", 0) + values.get("offsite_conversion.fb_pixel_purchase", 0)
+        spend     = float(r.get("spend", 0))
+        conversations = (
+            actions.get("onsite_conversion.messaging_conversation_started_7d", 0)
+            or actions.get("onsite_conversion.messaging_first_reply", 0)
+        )
+        rows.append({
+            "ad_id":         r.get("ad_id"),
+            "ad_name":       r.get("ad_name"),
+            "adset_id":      r.get("adset_id"),
+            "adset_name":    r.get("adset_name"),
+            "campaign_id":   r.get("campaign_id"),
+            "campaign_name": r.get("campaign_name"),
+            "objective":     r.get("objective", ""),
+            "campaign_type": OBJECTIVE_MAP.get(r.get("objective", ""), "other"),
+            "impressions":   int(r.get("impressions", 0)),
+            "reach":         int(r.get("reach") or 0),
+            "spend":         spend,
+            "clicks":        int(r.get("clicks", 0)),
+            "ctr":           float(r.get("ctr", 0)),
+            "cpc":           float(r.get("cpc") or 0),
+            "cpm":           float(r.get("cpm", 0)),
+            "leads":         leads,
+            "purchases":     purchases,
+            "purchase_value": rev,
+            "conversations": conversations,
+            "roas":          rev / spend if spend > 0 else 0,
+            "cpl":           spend / leads if leads > 0 else 0,
+            "cpa":           spend / purchases if purchases > 0 else 0,
+        })
+    return pd.DataFrame(rows)
 
 
 def _process_raw(raw: list) -> list:
