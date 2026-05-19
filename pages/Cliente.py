@@ -14,6 +14,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 st.markdown(css(), unsafe_allow_html=True)
+st.markdown(
+    "<style>[data-testid='stSidebarNav']{display:none!important;}</style>",
+    unsafe_allow_html=True,
+)
 
 CONFIG_PATH = Path(__file__).parent.parent / "config_alertas.json"
 
