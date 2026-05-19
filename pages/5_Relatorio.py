@@ -194,18 +194,33 @@ with col_preview:
         if _acct_conf:
             _public_url   = _cfg.get("public_url", "").rstrip("/")
             _client_token = _acct_conf.get("client_token", "")
-            _whatsapps    = _acct_conf.get("whatsapps") or ([_acct_conf["whatsapp"]] if _acct_conf.get("whatsapp") else [])
-            if _public_url and _client_token and _whatsapps:
+            if _public_url and _client_token:
                 _link = f"{_public_url}/Cliente?token={_client_token}"
                 _msg  = f"📊 *Relatório Meta Ads — {client_name.strip()}*\n📅 {since} a {until}\n\n👉 {_link}"
-                _wa   = f"https://wa.me/{_whatsapps[0]}?text={urllib.parse.quote(_msg)}"
-                st.markdown(
-                    f'<a href="{_wa}" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;'
-                    f'background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);color:#4ADE80;'
-                    f'border-radius:8px;padding:0.5rem 1rem;font-weight:600;text-decoration:none;font-size:0.9rem;">'
-                    f'📲 Enviar painel do cliente no WhatsApp</a>',
-                    unsafe_allow_html=True,
-                )
+
+                _whatsapps = _acct_conf.get("whatsapps") or ([_acct_conf["whatsapp"]] if _acct_conf.get("whatsapp") else [])
+                _options   = [f"+{n}" for n in _whatsapps] + ["Outro número..."]
+
+                st.markdown("**📲 Enviar painel no WhatsApp**")
+                _col_sel, _col_inp = st.columns([2, 2])
+                with _col_sel:
+                    _sel = st.selectbox("Destinatário", _options, key="wa_dest_sel", label_visibility="collapsed")
+                with _col_inp:
+                    _custom = ""
+                    if _sel == "Outro número...":
+                        _custom = st.text_input("Número", placeholder="5549999999999",
+                                                key="wa_dest_custom", label_visibility="collapsed")
+
+                _num = _custom.strip().replace("+", "").replace(" ", "").replace("-", "") if _sel == "Outro número..." else _sel.replace("+", "")
+                if _num:
+                    _wa = f"https://wa.me/{_num}?text={urllib.parse.quote(_msg)}"
+                    st.markdown(
+                        f'<a href="{_wa}" target="_blank" style="display:inline-flex;align-items:center;gap:0.5rem;'
+                        f'background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);color:#4ADE80;'
+                        f'border-radius:8px;padding:0.5rem 1rem;font-weight:600;text-decoration:none;font-size:0.9rem;">'
+                        f'📲 Abrir WhatsApp</a>',
+                        unsafe_allow_html=True,
+                    )
 
         st.divider()
         st.markdown("**Prévia do conteúdo incluído:**")
