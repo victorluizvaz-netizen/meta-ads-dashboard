@@ -1,7 +1,10 @@
 import base64
 import streamlit as st
 import streamlit.components.v1 as stv1
-from utils.meta_api import get_insights_with_comparison, get_adset_insights, get_ad_insights
+from utils.meta_api import (
+    get_insights_with_comparison, get_adset_insights, get_ad_insights,
+    get_adsets_management, get_adset_config,
+)
 from utils.report_generator import generate_report, generate_pdf_report
 from utils.config_loader import load_config
 from utils.whatsapp import send_document
@@ -35,8 +38,10 @@ with col_form:
     st.markdown(section_header("Seções do relatório"), unsafe_allow_html=True)
     sections = st.multiselect(
         "Incluir seções",
-        ["Alertas e Sugestões", "Visão Geral", "Awareness", "Tráfego", "Leads", "Conversões", "Conjuntos de Anúncios", "Criativos"],
-        default=["Alertas e Sugestões", "Visão Geral", "Awareness", "Tráfego", "Leads", "Conversões", "Conjuntos de Anúncios", "Criativos"],
+        ["Alertas e Sugestões", "Visão Geral", "Awareness", "Tráfego", "Leads", "Conversões",
+         "Conjuntos de Anúncios", "Criativos", "Configuração dos Conjuntos"],
+        default=["Alertas e Sugestões", "Visão Geral", "Awareness", "Tráfego", "Leads", "Conversões",
+                 "Conjuntos de Anúncios", "Criativos"],
     )
 
     st.markdown(section_header("Período"), unsafe_allow_html=True)
@@ -75,7 +80,9 @@ with col_preview:
                 st.stop()
 
             df_adsets = None
-            needs_adsets = any(s in sections for s in ("Alertas e Sugestões", "Conjuntos de Anúncios"))
+            needs_adsets = any(s in sections for s in (
+                "Alertas e Sugestões", "Conjuntos de Anúncios", "Configuração dos Conjuntos"
+            ))
             if needs_adsets:
                 try:
                     df_adsets = get_adset_insights(account_id, since, until)
@@ -83,6 +90,25 @@ with col_preview:
                         df_adsets = df_adsets[df_adsets["campaign_name"].isin(selected)]
                 except Exception:
                     df_adsets = None
+
+            adsets_config = None
+            if "Configuração dos Conjuntos" in sections:
+                try:
+                    adset_ids = (
+                        df_adsets["adset_id"].unique().tolist()
+                        if df_adsets is not None and not df_adsets.empty
+                        else []
+                    )
+                    if not adset_ids:
+                        adset_ids = [a["id"] for a in get_adsets_management(account_id)]
+                    adsets_config = []
+                    for aid in adset_ids:
+                        try:
+                            adsets_config.append(get_adset_config(aid))
+                        except Exception:
+                            pass
+                except Exception:
+                    adsets_config = None
 
             df_ads = None
             if "Criativos" in sections:
@@ -96,7 +122,7 @@ with col_preview:
             html = generate_report(
                 df=df, df_prev=df_prev, client_name=client_name.strip(),
                 since=since, until=until, sections=sections, notes=notes,
-                df_adsets=df_adsets, df_ads=df_ads,
+                df_adsets=df_adsets, df_ads=df_ads, adsets_config=adsets_config,
             )
 
             pdf_bytes = None
@@ -104,7 +130,7 @@ with col_preview:
                 pdf_bytes = generate_pdf_report(
                     df=df, df_prev=df_prev, client_name=client_name.strip(),
                     since=since, until=until, sections=sections, notes=notes,
-                    df_adsets=df_adsets, df_ads=df_ads,
+                    df_adsets=df_adsets, df_ads=df_ads, adsets_config=adsets_config,
                 )
             except Exception:
                 pass
@@ -120,6 +146,9 @@ with col_preview:
             elif s == "Conjuntos de Anúncios":
                 n_as = len(df_adsets) if df_adsets is not None and not df_adsets.empty else 0
                 _preview[s] = f"{n_as} conjuntos incluídos"
+            elif s == "Configuração dos Conjuntos":
+                n_cfg = len(adsets_config) if adsets_config else 0
+                _preview[s] = f"{n_cfg} conjuntos com configuração"
             elif s == "Criativos":
                 n_ads = len(df_ads) if df_ads is not None and not df_ads.empty else 0
                 _preview[s] = f"{n_ads} anúncios incluídos"

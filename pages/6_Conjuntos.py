@@ -2,11 +2,13 @@ import streamlit as st
 from utils.meta_api import (
     get_adset_insights_with_comparison, get_insights_with_comparison,
     get_adsets_management, get_campaigns_management, update_status, update_budget,
+    get_adset_config,
 )
 from utils.formatters import currency, number, percent, delta_pct
 from utils.styles import css, section_header
 from utils.alerts import generate_alerts
 from utils import charts
+from utils.adset_config_ui import render_adset_config
 
 st.set_page_config(page_title="Conjuntos de Anúncios | Meta Ads", page_icon="🗂️", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
@@ -388,3 +390,55 @@ with st.expander("⚙️ Controles de Conjunto", expanded=False):
                     st.rerun()
         elif is_cbo:
             st.info("Orçamento controlado pela campanha (CBO). Ajuste na página **Gestão de Campanhas**.")
+
+st.divider()
+
+# ── Configuração do Conjunto ──────────────────────────────────────────────────
+with st.expander("🎯 Configuração do Conjunto", expanded=False):
+    col_hdr_cfg, col_btn_cfg = st.columns([6, 1])
+    col_hdr_cfg.markdown("**Visualize público-alvo, posicionamentos e configurações de otimização**")
+    if col_btn_cfg.button("🔄 Atualizar", key="refresh_cfg", use_container_width=True):
+        get_adset_config.clear()
+        get_adsets_management.clear()
+        st.rerun()
+
+    with st.spinner("Carregando conjuntos..."):
+        try:
+            adsets_cfg = get_adsets_management(account_id)
+        except Exception as e:
+            st.error(f"Erro: {e}")
+            st.stop()
+
+    if selected:
+        try:
+            camps_cfg = get_campaigns_management(account_id)
+            camp_ids_cfg = {c["id"] for c in camps_cfg if c["name"] in selected}
+            adsets_cfg = [a for a in adsets_cfg if a.get("campaign_id") in camp_ids_cfg]
+        except Exception:
+            pass
+
+    if not adsets_cfg:
+        st.info("Nenhum conjunto encontrado.")
+    else:
+        cfg_labels = [
+            f"{STATUS_ICON.get(a['status'], '⚪')} {a['name']}" for a in adsets_cfg
+        ]
+        sel_cfg_idx = st.selectbox(
+            "Selecione o conjunto",
+            range(len(cfg_labels)),
+            format_func=lambda i: cfg_labels[i],
+            key="adset_cfg_sel",
+        )
+        selected_cfg_adset = adsets_cfg[sel_cfg_idx]
+
+        with st.spinner("Buscando configuração..."):
+            try:
+                cfg_data = get_adset_config(selected_cfg_adset["id"])
+            except Exception as e:
+                st.error(f"Erro ao buscar configuração: {e}")
+                cfg_data = {}
+
+        if cfg_data:
+            st.markdown(f"**Conjunto:** {selected_cfg_adset['name']}")
+            st.markdown("---")
+            render_adset_config(cfg_data)

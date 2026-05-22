@@ -440,9 +440,125 @@ def _wrap(body, client_name, since, until, for_pdf=False):
 </html>"""
 
 
+# ── Configuração dos conjuntos ────────────────────────────────────────────────
+
+_OPT_RPT = {
+    "REACH": "Alcance", "LINK_CLICKS": "Cliques no Link", "IMPRESSIONS": "Impressões",
+    "LEAD_GENERATION": "Geração de Leads", "OFFSITE_CONVERSIONS": "Conversões",
+    "LANDING_PAGE_VIEWS": "Pág. de Destino", "THRUPLAY": "ThruPlay",
+    "APP_INSTALLS": "Instalações", "POST_ENGAGEMENT": "Engajamento",
+    "CONVERSATIONS": "Conversas", "QUALITY_LEAD": "Leads Qualif.",
+}
+_BID_RPT = {
+    "LOWEST_COST_WITHOUT_CAP": "Menor Custo",
+    "LOWEST_COST_WITH_BID_CAP": "Lance Máximo",
+    "COST_CAP": "Meta de Custo",
+    "MINIMUM_ROAS": "ROAS Mínimo",
+}
+_PLAT_RPT = {"facebook": "FB", "instagram": "IG", "audience_network": "AN", "messenger": "Msg"}
+_COUNTRY_RPT = {"BR": "Brasil", "US": "EUA", "AR": "Argentina", "PT": "Portugal",
+                "CO": "Colômbia", "CL": "Chile", "MX": "México", "ES": "Espanha"}
+
+
+def _cfg_summary(cfg: dict) -> dict:
+    t = cfg.get("targeting") or {}
+    genders = t.get("genders", [])
+    if not genders or set(genders) >= {1, 2}:
+        gender = "Todos"
+    elif 1 in genders:
+        gender = "Masculino"
+    else:
+        gender = "Feminino"
+    geo = t.get("geo_locations", {})
+    locs = [_COUNTRY_RPT.get(c, c) for c in geo.get("countries", [])]
+    locs += [city.get("name", "") for city in geo.get("cities", [])]
+    platforms = t.get("publisher_platforms", [])
+    return {
+        "name":      cfg.get("name", "—"),
+        "opt_goal":  _OPT_RPT.get(cfg.get("optimization_goal", ""), cfg.get("optimization_goal", "") or "—"),
+        "bid_strat": _BID_RPT.get(cfg.get("bid_strategy", ""), cfg.get("bid_strategy", "") or "—"),
+        "age":       f"{t.get('age_min', 18)}–{t.get('age_max', 65)}",
+        "gender":    gender,
+        "locations": (", ".join(locs[:2]) + ("…" if len(locs) > 2 else "")) or "—",
+        "platforms": ", ".join(_PLAT_RPT.get(p, p) for p in platforms) or "Auto",
+    }
+
+
+def _adset_config_table_html(adsets_config: list) -> str:
+    if not adsets_config:
+        return ""
+    headers = ["Conjunto", "Otimização", "Lance", "Idade", "Gênero", "Localização", "Plataformas"]
+    th = "".join(
+        f'<th style="padding:7px 12px;text-align:{"left" if i==0 else "right"};font-size:0.7rem;'
+        f'font-weight:700;color:#65676B;text-transform:uppercase;letter-spacing:0.05em;white-space:nowrap;">'
+        f'{h}</th>'
+        for i, h in enumerate(headers)
+    )
+    trs = ""
+    for cfg in adsets_config:
+        if "error" in cfg:
+            continue
+        s = _cfg_summary(cfg)
+        vals = [s["name"], s["opt_goal"], s["bid_strat"], s["age"], s["gender"], s["locations"], s["platforms"]]
+        cells = "".join(
+            f'<td style="padding:7px 12px;text-align:{"left" if j==0 else "right"};font-size:0.82rem;'
+            f'color:{"#1C1E21" if j==0 else "#444"};border-top:1px solid #F0F2F5;white-space:nowrap;">{v}</td>'
+            for j, v in enumerate(vals)
+        )
+        trs += f'<tr>{cells}</tr>'
+    if not trs:
+        return ""
+    return (
+        '<p style="font-size:0.72rem;font-weight:700;color:#65676B;text-transform:uppercase;'
+        'letter-spacing:0.06em;margin:1.2rem 0 0.4rem;">Configuração por conjunto</p>'
+        '<div style="overflow-x:auto;margin-bottom:1.5rem;">'
+        '<table style="width:100%;border-collapse:collapse;background:white;'
+        'border:1px solid #E4E6EB;border-radius:10px;overflow:hidden;">'
+        f'<thead><tr style="background:#F7F8FA;">{th}</tr></thead>'
+        f'<tbody>{trs}</tbody>'
+        '</table></div>'
+    )
+
+
+def _adset_config_table_pdf(adsets_config: list) -> str:
+    if not adsets_config:
+        return ""
+    headers = ["Conjunto", "Otimização", "Lance", "Idade", "Gênero", "Localização", "Plats."]
+    widths  = [22, 14, 13, 7, 9, 17, 10]
+    cols_el = "".join(f'<col width="{w}%"/>' for w in widths)
+
+    def td(content, idx, is_hdr=False):
+        align  = "left" if idx == 0 else "right"
+        bg     = "background-color:#F0F2F5;" if is_hdr else ""
+        fw     = "font-weight:bold;" if is_hdr else ""
+        border = "" if is_hdr else "border-top:0.5pt solid #E4E6EB;"
+        return (f'<td style="{bg}{fw}{border}font-size:6pt;padding:2pt 3pt;'
+                f'text-align:{align};word-wrap:break-word;">{content}</td>')
+
+    hdr = "".join(td(h.upper(), i, True) for i, h in enumerate(headers))
+    trs = ""
+    for cfg in adsets_config:
+        if "error" in cfg:
+            continue
+        s = _cfg_summary(cfg)
+        name  = (s["name"][:28] + "…") if len(s["name"]) > 28 else s["name"]
+        vals  = [name, s["opt_goal"], s["bid_strat"], s["age"], s["gender"], s["locations"], s["platforms"]]
+        cells = "".join(td(v, i) for i, v in enumerate(vals))
+        trs  += f'<tr>{cells}</tr>'
+    if not trs:
+        return ""
+    return (
+        '<p style="font-size:7pt;color:#65676B;font-weight:bold;margin-top:8pt;margin-bottom:2pt;">'
+        'CONFIGURAÇÃO POR CONJUNTO</p>'
+        f'<table width="100%" cellspacing="0" cellpadding="0" '
+        f'style="margin-bottom:10pt;border:0.5pt solid #E4E6EB;table-layout:fixed;">'
+        f'{cols_el}<tr>{hdr}</tr>{trs}</table>'
+    )
+
+
 # ── Builder HTML ───────────────────────────────────────────────────────────────
 
-def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=None):
+def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=None, adsets_config=None):
     body = ""
 
     def dp(col, agg="sum", lib=False):
@@ -637,6 +753,14 @@ def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=No
                 body += '<p style="font-size:0.72rem;font-weight:700;color:#65676B;text-transform:uppercase;letter-spacing:0.06em;margin:1.2rem 0 0.4rem;">Top 10 por CTR</p>'
                 body += _campaign_table_html(top_ctr, base_cols)
 
+    if "Configuração dos Conjuntos" in sections and adsets_config:
+        body += _section("Configuração dos Conjuntos de Anúncios")
+        body += (
+            '<p style="color:#65676B;font-size:0.85rem;margin-bottom:0.8rem;">'
+            'Público-alvo, estratégia de lance e posicionamentos configurados por conjunto.</p>'
+        )
+        body += _adset_config_table_html(adsets_config)
+
     if notes.strip():
         body += _section("Observações")
         body += f'<p style="color:#1C1E21;line-height:1.7;white-space:pre-wrap;">{notes}</p>'
@@ -646,7 +770,7 @@ def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=No
 
 # ── Builder PDF ────────────────────────────────────────────────────────────────
 
-def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None):
+def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None, adsets_config=None):
     body = ""
 
     def dp2(col, src_df, prev_df, agg="sum", lib=False):
@@ -827,6 +951,10 @@ def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None):
                 body += '<p style="font-size:7pt;color:#65676B;font-weight:bold;margin-top:8pt;margin-bottom:2pt;">TOP 10 POR CTR</p>'
                 body += _campaign_table_pdf(top_ctr, base_cols)
 
+    if "Configuração dos Conjuntos" in sections and adsets_config:
+        body += _section_pdf("Configuração dos Conjuntos de Anúncios")
+        body += _adset_config_table_pdf(adsets_config)
+
     if notes.strip():
         body += _section_pdf("Observações")
         body += f'<p style="font-size:9pt;line-height:1.6;">{notes}</p>'
@@ -836,16 +964,19 @@ def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None):
 
 # ── API pública ────────────────────────────────────────────────────────────────
 
-def generate_report(df, df_prev, client_name, since, until, sections, notes="", df_adsets=None, df_ads=None) -> str:
+def generate_report(df, df_prev, client_name, since, until, sections, notes="",
+                    df_adsets=None, df_ads=None, adsets_config=None) -> str:
     first_flag = [True]
     body = _html_body(df, df_prev, sections, notes,
                       chart_fn=lambda fig: _fig_interactive(fig, first_flag),
-                      df_adsets=df_adsets, df_ads=df_ads)
+                      df_adsets=df_adsets, df_ads=df_ads, adsets_config=adsets_config)
     return _wrap(body, client_name, since, until, for_pdf=False)
 
 
-def generate_pdf_report(df, df_prev, client_name, since, until, sections, notes="", df_adsets=None, df_ads=None) -> bytes:
-    body     = _pdf_body(df, df_prev, sections, notes, df_adsets=df_adsets, df_ads=df_ads)
+def generate_pdf_report(df, df_prev, client_name, since, until, sections, notes="",
+                        df_adsets=None, df_ads=None, adsets_config=None) -> bytes:
+    body     = _pdf_body(df, df_prev, sections, notes, df_adsets=df_adsets, df_ads=df_ads,
+                         adsets_config=adsets_config)
     html_str = _wrap(body, client_name, since, until, for_pdf=True)
 
     # WeasyPrint — funciona no Linux (Cloud). Não requer GTK a partir da v60.

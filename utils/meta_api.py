@@ -311,6 +311,14 @@ def get_ads_management(account_id: str) -> list:
     return [a for a in raw if a.get("status") not in ("DELETED", "ARCHIVED")]
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def get_adset_config(adset_id: str) -> dict:
+    return _get(f"{BASE_URL}/{adset_id}", {
+        "fields": "id,name,optimization_goal,billing_event,bid_strategy,bid_amount,"
+                  "start_time,end_time,destination_type,targeting,promoted_object,pacing_type",
+    })
+
+
 def update_status(object_id: str, status: str) -> dict:
     r = requests.post(f"{BASE_URL}/{object_id}", params={
         "access_token": ACCESS_TOKEN,

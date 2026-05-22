@@ -2,7 +2,8 @@ import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 from utils.config_loader import load_config
-from utils.meta_api import get_insights_with_comparison
+from utils.meta_api import get_insights_with_comparison, get_adsets_management, get_adset_config
+from utils.adset_config_ui import render_adset_config
 from utils.formatters import currency, number, percent, delta_pct, top_insight
 from utils.styles import css, section_header, insight_box
 from utils import charts
@@ -365,3 +366,51 @@ st.caption(
     f"Meta Ads Dashboard  ·  Dados via Meta Ads API  ·  "
     f"{datetime.now().strftime('%d/%m/%Y %H:%M')}"
 )
+
+st.divider()
+
+# ── Configuração dos conjuntos ─────────────────────────────────────────────────
+_STATUS_ICON_CLI = {"ACTIVE": "🟢", "PAUSED": "🟡", "WITH_ISSUES": "🔴"}
+
+with st.expander("🎯 Configuração dos Conjuntos de Anúncios", expanded=False):
+    st.caption("Público-alvo, posicionamentos e otimização configurados em cada conjunto.")
+
+    col_cli_hdr, col_cli_btn = st.columns([6, 1])
+    if col_cli_btn.button("🔄", key="cli_cfg_refresh", use_container_width=True, help="Atualizar lista"):
+        get_adset_config.clear()
+        get_adsets_management.clear()
+        st.rerun()
+
+    with st.spinner("Carregando conjuntos..."):
+        try:
+            adsets_cli = get_adsets_management(account_id)
+        except Exception as e:
+            st.error(f"Erro ao carregar conjuntos: {e}")
+            adsets_cli = []
+
+    if not adsets_cli:
+        st.info("Nenhum conjunto de anúncios encontrado.")
+    else:
+        cli_cfg_labels = [
+            f"{_STATUS_ICON_CLI.get(a['status'], '⚪')} {a['name']}" for a in adsets_cli
+        ]
+        sel_cli_cfg_idx = st.selectbox(
+            "Conjunto",
+            range(len(cli_cfg_labels)),
+            format_func=lambda i: cli_cfg_labels[i],
+            key="cli_adset_cfg_sel",
+            label_visibility="collapsed",
+        )
+        sel_cli_adset = adsets_cli[sel_cli_cfg_idx]
+
+        with st.spinner("Buscando configuração..."):
+            try:
+                cli_cfg = get_adset_config(sel_cli_adset["id"])
+            except Exception as e:
+                st.error(f"Erro ao buscar configuração: {e}")
+                cli_cfg = {}
+
+        if cli_cfg:
+            st.markdown(f"**Conjunto:** {sel_cli_adset['name']}")
+            st.markdown("---")
+            render_adset_config(cli_cfg)
