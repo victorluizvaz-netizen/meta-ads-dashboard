@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
+from utils.tz import now_br
 from utils.config_loader import load_config
 from utils.meta_api import get_insights_with_comparison, get_adsets_management, get_adset_config
 from utils.adset_config_ui import render_adset_config
@@ -162,7 +163,7 @@ st.caption(
     f"{since.strftime('%d/%m/%Y')} → {until.strftime('%d/%m/%Y')}"
     f"  ·  {df['campaign_name'].nunique()} campanha(s)"
     f"  ·  {df['campaign_type'].nunique()} objetivo(s)"
-    f"  ·  atualizado {datetime.now().strftime('%H:%M')}"
+    f"  ·  atualizado {now_br().strftime('%H:%M')}"
 )
 
 insight = top_insight(df, df_prev)
@@ -367,7 +368,7 @@ with st.expander("📋 Detalhamento por campanha"):
 
 st.caption(
     f"Meta Ads Dashboard  ·  Dados via Meta Ads API  ·  "
-    f"{datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    f"{now_br().strftime('%d/%m/%Y %H:%M')}"
 )
 
 st.divider()

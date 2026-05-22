@@ -1,6 +1,7 @@
 import calendar
 import uuid
 from datetime import datetime, timedelta, date
+from utils.tz import now_br
 
 import streamlit as st
 
@@ -42,7 +43,7 @@ FORMAT_LABELS = {"pdf": "PDF", "html": "HTML", "both": "PDF + HTML"}
 
 def _compute_next_run(freq: str, run_time, run_date=None,
                       day_of_week: int = 0, day_of_month: int = 1) -> str:
-    now = datetime.now()
+    now = now_br()
     h, m = run_time.hour, run_time.minute
 
     if freq == "once":
@@ -334,7 +335,7 @@ with col_list:
                 with btn_col3:
                     if st.button("▶ Enviar agora", key=f"now_{sched_id}", use_container_width=True):
                         # Força next_run para agora para que o runner execute na próxima iteração
-                        sched["next_run"] = datetime.now().isoformat()
+                        sched["next_run"] = now_br().isoformat()
                         cfg["schedules"] = schedules
                         save_config(cfg)
                         st.success("Agendado para o próximo ciclo do runner (≤ 15 min).")

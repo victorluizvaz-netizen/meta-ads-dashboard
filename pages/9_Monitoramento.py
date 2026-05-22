@@ -8,6 +8,7 @@ from datetime import datetime
 from utils.styles import css, section_header
 from utils.whatsapp import send_message, send_document, list_groups
 from utils.config_loader import load_config, save_config as _save_config
+from utils.tz import now_br
 
 st.set_page_config(page_title="Monitoramento | Meta Ads", page_icon="📱", layout="wide")
 st.markdown(css(), unsafe_allow_html=True)
@@ -70,7 +71,7 @@ if not cfg:
 
 log       = _load_log()
 snap_all  = log.get("leads_snapshot", {})
-today_str = datetime.now().strftime("%Y-%m-%d")
+today_str = now_br().strftime("%Y-%m-%d")
 contas    = cfg.get("contas", [])
 evo       = cfg.get("evolution_api", {})
 public_url = cfg.get("public_url", "").rstrip("/")
@@ -94,7 +95,7 @@ for aid, s in snap_all.items():
 if last_run_ts:
     try:
         dt_last = datetime.fromisoformat(last_run_ts)
-        diff_min = int((datetime.now() - dt_last).total_seconds() / 60)
+        diff_min = int((now_br() - dt_last).total_seconds() / 60)
         diff_txt = f"há {diff_min} min" if diff_min < 60 else f"há {diff_min // 60}h {diff_min % 60}min"
         st.info(f"⏱️ Última execução do runner: **{dt_last.strftime('%H:%M')}** ({diff_txt})")
     except Exception:
@@ -279,7 +280,7 @@ for idx, account in enumerate(contas):
                 f"✅ *Teste de alerta — Meta Ads Dashboard*\n"
                 f"Conta: _{label}_\n"
                 f"Monitoramento: {tipo_txt}\n"
-                f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                f"⏰ {now_br().strftime('%d/%m/%Y %H:%M')}"
             )
             failed, success = [], 0
             for num in st.session_state[nums_key]:

@@ -51,6 +51,7 @@ from utils.alert_logic import (
     check_alerts, build_daily_report, build_persistent_summary,
     check_lead_increment, build_snapshot,
 )
+from utils.tz import now_br
 
 
 def load_log() -> dict:
@@ -80,7 +81,7 @@ ACTIVE_HOURS         = (6, 23)   # roda das 06:00 às 22:59; fora disso o script
 FULL_CHECK_INTERVAL  = 60        # minutos entre verificações completas de alertas de performance
 
 def is_active_hours() -> bool:
-    return ACTIVE_HOURS[0] <= datetime.now().hour < ACTIVE_HOURS[1]
+    return ACTIVE_HOURS[0] <= now_br().hour < ACTIVE_HOURS[1]
 
 def _should_full_check(log: dict, account_id: str) -> bool:
     """Retorna True se já passaram FULL_CHECK_INTERVAL minutos desde o último check completo."""
@@ -88,13 +89,13 @@ def _should_full_check(log: dict, account_id: str) -> bool:
     if not last:
         return True
     try:
-        elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
+        elapsed = (now_br() - datetime.fromisoformat(last)).total_seconds()
         return elapsed >= FULL_CHECK_INTERVAL * 60
     except Exception:
         return True
 
 def _mark_full_check(log: dict, account_id: str):
-    log.setdefault("last_full_check", {})[account_id] = datetime.now().isoformat()
+    log.setdefault("last_full_check", {})[account_id] = now_br().isoformat()
 
 def _send_all(evo: dict, numbers: list, text: str) -> bool:
     """Envia mensagem para todos os números. Retorna True se ao menos um recebeu."""
@@ -110,7 +111,7 @@ def _send_all(evo: dict, numbers: list, text: str) -> bool:
 
 
 def is_report_window(report_time: str) -> bool:
-    now = datetime.now()
+    now = now_br()
     h, m = map(int, report_time.split(":"))
     target = now.replace(hour=h, minute=m, second=0, microsecond=0)
     return 0 <= (now - target).total_seconds() < 3600
@@ -174,7 +175,7 @@ def _process_schedules(config: dict):
         return
 
     evo     = config.get("evolution_api", {})
-    now     = datetime.now()
+    now     = now_br()
     changed = False
 
     for sched in schedules:
@@ -319,7 +320,7 @@ def main():
     report_time = config.get("report_time", "08:00")
     today       = datetime.today().strftime("%Y-%m-%d")
     yesterday   = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
-    now_iso     = datetime.now().isoformat()
+    now_iso     = now_br().isoformat()
     send_report = is_report_window(report_time)
 
     active       = log["active"]
@@ -336,7 +337,7 @@ def main():
 
         run_full = _should_full_check(log, account_id)
         mode_tag = "COMPLETO" if run_full else "LEADS"
-        print(f"\n[{label}] Verificando ({mode_tag}) — {datetime.now().strftime('%H:%M')}")
+        print(f"\n[{label}] Verificando ({mode_tag}) — {now_br().strftime('%H:%M')}")
 
         # ── Sempre: insights de hoje (necessário p/ lead monitoring) ─────────
         try:
@@ -376,7 +377,7 @@ def main():
         if not run_full:
             try:
                 last_ts  = log["last_full_check"][account_id]
-                mins_ago = int((datetime.now() - datetime.fromisoformat(last_ts)).total_seconds() // 60)
+                mins_ago = int((now_br() - datetime.fromisoformat(last_ts)).total_seconds() // 60)
                 next_in  = max(0, FULL_CHECK_INTERVAL - mins_ago)
                 print(f"  [SKIP] Próximo check completo em ~{next_in} min")
             except Exception:

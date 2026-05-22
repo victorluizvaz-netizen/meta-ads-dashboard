@@ -2,6 +2,7 @@
 Regras de alerta e builder do relatório diário.
 """
 from datetime import datetime
+from utils.tz import now_br
 
 
 def check_alerts(insights: list, campaigns_budget: list, thresholds: dict) -> list:
@@ -195,7 +196,7 @@ def check_lead_increment(
     leads_snap = snapshot.get("leads")       # None = primeira execução (sem alert)
     conv_snap  = snapshot.get("conversations")
     alerts     = []
-    now_fmt    = datetime.now().strftime("%H:%M")
+    now_fmt    = now_br().strftime("%H:%M")
 
     for row in current:
         cid  = row["campaign_id"]
@@ -237,8 +238,8 @@ def check_lead_increment(
 def build_snapshot(current: list) -> dict:
     """Gera snapshot dos contadores atuais para comparação no próximo ciclo."""
     return {
-        "date":          datetime.now().strftime("%Y-%m-%d"),
-        "ts":            datetime.now().isoformat(),
+        "date":          now_br().strftime("%Y-%m-%d"),
+        "ts":            now_br().isoformat(),
         "leads":         {r["campaign_id"]: int(r["leads"])         for r in current},
         "conversations": {r["campaign_id"]: int(r["conversations"]) for r in current},
     }
@@ -249,7 +250,7 @@ def build_persistent_summary(label: str, persistent_alerts: list) -> str:
     Resumo compacto dos alertas ainda ativos, enviado a cada ciclo.
     persistent_alerts: lista de dicts do log["active"] desta conta.
     """
-    now_fmt = datetime.now().strftime("%H:%M")
+    now_fmt = now_br().strftime("%H:%M")
     lines = [
         f"⏳ *{len(persistent_alerts)} alerta(s) não resolvido(s) — {label}*",
         f"Verificação: {now_fmt}",
