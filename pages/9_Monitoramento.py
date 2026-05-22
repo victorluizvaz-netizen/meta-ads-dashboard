@@ -1,3 +1,4 @@
+import json
 import secrets
 import streamlit as st
 import plotly.graph_objects as go
@@ -5,7 +6,7 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from utils.styles import css, section_header
-from utils.whatsapp import send_message, send_document
+from utils.whatsapp import send_message, send_document, list_groups
 from utils.config_loader import load_config, save_config as _save_config
 
 st.set_page_config(page_title="Monitoramento | Meta Ads", page_icon="📱", layout="wide")
@@ -37,8 +38,14 @@ def _whatsapps_for(account: dict) -> list:
     return []
 
 
+def _is_group(n: str) -> bool:
+    return "@g.us" in n
+
+
 def _fmt_number(n: str) -> str:
     n = n.strip()
+    if _is_group(n):
+        return n
     if len(n) == 13:
         return f"+{n[:2]} {n[2:4]} {n[4:9]}-{n[9:]}"
     if len(n) == 12:
@@ -170,10 +177,11 @@ for idx, account in enumerate(contas):
         if nums:
             for i, num in enumerate(nums):
                 c_num, c_del = st.columns([5, 1])
+                icon = "👥" if _is_group(num) else "📱"
                 c_num.markdown(
                     f'<div style="background:rgba(168,85,247,0.08);border:1px solid rgba(168,85,247,0.18);'
                     f'border-radius:8px;padding:0.4rem 0.9rem;font-size:0.84rem;color:#D4B0FF;'
-                    f'font-family:monospace;margin-bottom:4px;">📱 {_fmt_number(num)}</div>',
+                    f'font-family:monospace;margin-bottom:4px;">{icon} {_fmt_number(num)}</div>',
                     unsafe_allow_html=True,
                 )
                 if c_del.button("✕", key=f"del_{account_id}_{i}", help="Remover número"):
@@ -207,6 +215,40 @@ for idx, account in enumerate(contas):
                     st.warning("Número já cadastrado.")
             else:
                 st.error("Inválido. Use apenas dígitos no formato internacional, ex: `5549999999999`")
+
+        st.markdown("")
+        with st.expander("👥 Adicionar grupo do WhatsApp"):
+            grp_key = f"_grps_{account_id}"
+            if grp_key not in st.session_state:
+                st.session_state[grp_key] = None
+
+            if not evo.get("base_url"):
+                st.warning("Configure a Evolution API em `config_alertas.json` primeiro.")
+            else:
+                if st.button("🔍 Buscar grupos", key=f"fetch_grps_{account_id}"):
+                    with st.spinner("Buscando grupos..."):
+                        st.session_state[grp_key] = list_groups(
+                            evo["base_url"], evo["instance"], evo["apikey"]
+                        )
+
+                groups = st.session_state[grp_key]
+                if groups is None:
+                    st.caption("Clique em 'Buscar grupos' para listar os grupos disponíveis na instância.")
+                elif len(groups) == 0:
+                    st.warning("Nenhum grupo encontrado. Verifique se a instância está conectada e pertence a algum grupo.")
+                else:
+                    opts = {f"{g['subject']}  ({g['id']})": g["id"] for g in groups}
+                    sel_label = st.selectbox(
+                        "Grupo", list(opts.keys()),
+                        key=f"sel_grp_{account_id}",
+                    )
+                    if st.button("＋ Adicionar grupo", key=f"add_grp_{account_id}", use_container_width=True):
+                        jid = opts[sel_label]
+                        if jid not in st.session_state[nums_key]:
+                            st.session_state[nums_key].append(jid)
+                            st.rerun()
+                        else:
+                            st.warning("Grupo já adicionado.")
 
     # ── Botões salvar / testar ───────────────────────────────────────────────────
     st.markdown("")

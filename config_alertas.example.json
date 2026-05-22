@@ -14,6 +14,10 @@
       "account_id": "act_XXXXXXXXX",
       "label": "Nome do Cliente A",
       "whatsapp": "5511999999999",
+      "whatsapps": [
+        "5511999999999",
+        "120363XXXXXXXXXXXXXXXXXX@g.us"
+      ],
       "thresholds": {
         "budget_warning_pct": 70,
         "ctr_min": 0.5,

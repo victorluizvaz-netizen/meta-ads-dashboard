@@ -40,3 +40,34 @@ def send_document(base_url: str, instance: str, apikey: str, number: str,
     except Exception as e:
         print(f"[WhatsApp] Falha ao enviar documento para {url}: {e}")
         return False
+
+
+def list_groups(base_url: str, instance: str, apikey: str) -> list:
+    """Retorna grupos disponíveis na instância Evolution API.
+    Cada item: {'id': '<jid>@g.us', 'subject': '<nome do grupo>'}
+    O campo 'id' pode ser passado diretamente como 'number' em send_message/send_document.
+    """
+    url = f"{base_url.rstrip('/')}/group/fetchAllGroups/{instance}?getParticipants=false"
+    headers = {"apikey": apikey}
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+        if r.status_code != 200:
+            print(f"[WhatsApp] list_groups HTTP {r.status_code} — {r.text[:200]}")
+            return []
+        data = r.json()
+        if isinstance(data, list):
+            raw = data
+        elif isinstance(data, dict):
+            raw = data.get("groups", data.get("data", []))
+        else:
+            return []
+        return [
+            {
+                "id":      g.get("id", ""),
+                "subject": g.get("subject") or g.get("name") or g.get("id", ""),
+            }
+            for g in raw if g.get("id")
+        ]
+    except Exception as e:
+        print(f"[WhatsApp] list_groups falhou: {e}")
+        return []
