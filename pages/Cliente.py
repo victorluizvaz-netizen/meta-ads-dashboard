@@ -29,6 +29,8 @@ def _load_config() -> dict:
 token = st.query_params.get("token", "")
 
 if not token:
+    if st.session_state.get("account_id"):
+        st.switch_page("app.py")
     st.markdown(
         '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;'
         'min-height:60vh;text-align:center;gap:1rem;">'
@@ -39,6 +41,7 @@ if not token:
         '</div>',
         unsafe_allow_html=True,
     )
+    st.page_link("app.py", label="← Voltar ao Dashboard", icon="🏠")
     st.stop()
 
 cfg     = _load_config()
