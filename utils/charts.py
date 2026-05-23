@@ -2,20 +2,25 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 
-BLUE   = "#A855F7"   # purple — cor primária (era green neon)
-PINK   = "#EC4899"   # hot pink
-GREEN  = "#10B981"   # emerald — mantido para leads/positivo
+BLUE   = "#38BDF8"   # sky blue — cor primária
+GOLD   = "#F59E0B"   # amber gold — destaque/secundário
+GREEN  = "#10B981"   # emerald — leads/positivo
 RED    = "#EF4444"   # red
-ORANGE = "#F59E0B"   # amber
-PURPLE = "#7C3AED"   # purple profundo — CPM / destaque
+ORANGE = "#F97316"   # laranja — CPM / destaque
 CYAN   = "#22D3EE"   # cyan
-GRAY   = "#6B7280"   # neutro
+GRAY   = "#4A7A9B"   # azul-cinza neutro
 
-PALETTE = [BLUE, PINK, CYAN, ORANGE, GREEN, RED, GRAY]
+# Retrocompatibilidade — aliases que outras páginas possam usar
+PINK   = GOLD
+PURPLE = "#0369A1"
+
+PALETTE = [BLUE, GOLD, CYAN, GREEN, ORANGE, RED, GRAY]
 
 _BG   = "rgba(0,0,0,0)"
-_TEXT = "#7B6EA8"
-_GRID = "#1C1236"
+_TEXT = "#4A7A9B"
+_GRID = "#0A1428"
+
+_TRANSITION = dict(duration=420, easing="cubic-in-out")
 
 BASE = dict(
     plot_bgcolor=_BG,
@@ -24,9 +29,9 @@ BASE = dict(
     margin=dict(l=12, r=12, t=48, b=12),
     hovermode="x unified",
     hoverlabel=dict(
-        bgcolor="#160D30",
-        bordercolor="rgba(168,85,247,0.30)",
-        font_color="#F1ECF8",
+        bgcolor="#0A1020",
+        bordercolor="rgba(56,189,248,0.25)",
+        font_color="#EFF6FF",
         font_size=12,
         font_family="Inter, sans-serif",
     ),
@@ -55,10 +60,11 @@ def _apply(fig, title):
     fig.update_layout(
         title=dict(
             text=title,
-            font=dict(size=13, color="#D4B0FF", family="Inter, sans-serif"),
+            font=dict(size=13, color="#93C5FD", family="Inter, sans-serif"),
             x=0,
             pad=dict(l=4),
         ),
+        transition=_TRANSITION,
         **BASE,
     )
     return fig
@@ -82,7 +88,7 @@ def line(df, x, y, title, label="", color=BLUE, prev_df=None, prev_label="Perío
         line=dict(color=color, width=2.5, shape="spline", smoothing=0.8),
         fill="tozeroy",
         fillgradient=dict(
-            colorscale=[[0, f"rgba({r},{g},{b},0.0)"], [1, f"rgba({r},{g},{b},0.28)"]],
+            colorscale=[[0, f"rgba({r},{g},{b},0.0)"], [1, f"rgba({r},{g},{b},0.26)"]],
             type="vertical",
         ),
     ))
@@ -123,9 +129,18 @@ def bar(df, x, y, title, color=BLUE, horizontal=False):
                 linecolor="rgba(0,0,0,0)",
                 zeroline=False,
             ),
-            "xaxis": dict(showgrid=True, gridcolor=_GRID, linecolor="rgba(0,0,0,0)", tickfont=dict(size=11, color=_TEXT), zeroline=False),
+            "xaxis": dict(
+                showgrid=True, gridcolor=_GRID,
+                linecolor="rgba(0,0,0,0)",
+                tickfont=dict(size=11, color=_TEXT),
+                zeroline=False,
+            ),
         }
-        fig.update_layout(title=dict(text=title, font=dict(size=13, color="#D4B0FF"), x=0, pad=dict(l=4)), **layout)
+        fig.update_layout(
+            title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
+            transition=_TRANSITION,
+            **layout,
+        )
     else:
         fig = go.Figure(go.Bar(
             x=df[x], y=df[y],
@@ -136,44 +151,52 @@ def bar(df, x, y, title, color=BLUE, horizontal=False):
             ),
         ))
         fig.update_layout(
-            title=dict(text=title, font=dict(size=13, color="#D4B0FF"), x=0, pad=dict(l=4)),
+            title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
             xaxis_tickangle=-35,
+            transition=_TRANSITION,
             **BASE,
         )
     return fig
 
 
 def donut(labels, values, title):
-    palette = [BLUE, PINK, CYAN, ORANGE, GREEN, RED, GRAY]
+    palette = [BLUE, GOLD, CYAN, ORANGE, GREEN, RED, GRAY]
     fig = go.Figure(go.Pie(
         labels=labels, values=values, hole=0.65,
-        marker=dict(colors=palette, line=dict(color="#0D0B1A", width=3)),
+        marker=dict(colors=palette, line=dict(color="#050C1A", width=3)),
         textinfo="label+percent",
-        textfont=dict(size=11, color="#D4B0FF", family="Inter, sans-serif"),
+        textfont=dict(size=11, color="#93C5FD", family="Inter, sans-serif"),
         hovertemplate="%{label}: R$ %{value:,.2f}<extra></extra>",
         pull=[0.03] + [0] * (len(labels) - 1),
     ))
     fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#D4B0FF"), x=0, pad=dict(l=4)),
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
         legend=dict(font=dict(size=11, color=_TEXT), bgcolor="rgba(0,0,0,0)"),
+        transition=_TRANSITION,
         **{k: v for k, v in BASE.items() if k not in ("legend",)},
     )
     return fig
 
 
-def bar_compare(categories, values_current, values_prev, title, label_current="Período atual", label_prev="Período anterior"):
+def bar_compare(categories, values_current, values_prev, title,
+                label_current="Período atual", label_prev="Período anterior"):
     fig = go.Figure()
     fig.add_trace(go.Bar(name=label_prev, x=categories, y=values_prev,
         marker=dict(color=GRAY, opacity=0.5, cornerradius=5, line=dict(width=0))))
     fig.add_trace(go.Bar(name=label_current, x=categories, y=values_current,
         marker=dict(color=BLUE, cornerradius=5, line=dict(width=0))))
-    fig.update_layout(barmode="group", title=dict(text=title, font=dict(size=13, color="#D4B0FF"), x=0, pad=dict(l=4)), **BASE)
+    fig.update_layout(
+        barmode="group",
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
+        transition=_TRANSITION,
+        **BASE,
+    )
     return fig
 
 
 def bar_with_avg(df, x, y, title, color=GREEN, avg_label="Média"):
     vals = df[y][df[y] > 0]
-    avg = vals.mean() if not vals.empty else None
+    avg  = vals.mean() if not vals.empty else None
     r, g, b = int(color[1:3], 16), int(color[3:5], 16), int(color[5:7], 16)
     n = max(len(df) - 1, 1)
     fig = go.Figure(go.Bar(
@@ -194,10 +217,16 @@ def bar_with_avg(df, x, y, title, color=GREEN, avg_label="Média"):
         )
     layout = {
         **BASE,
-        "yaxis": dict(autorange="reversed", gridcolor=_GRID, tickfont=dict(size=11, color=_TEXT), linecolor="rgba(0,0,0,0)", zeroline=False),
-        "xaxis": dict(showgrid=True, gridcolor=_GRID, linecolor="rgba(0,0,0,0)", tickfont=dict(size=11, color=_TEXT), zeroline=False),
+        "yaxis": dict(autorange="reversed", gridcolor=_GRID, tickfont=dict(size=11, color=_TEXT),
+                      linecolor="rgba(0,0,0,0)", zeroline=False),
+        "xaxis": dict(showgrid=True, gridcolor=_GRID, linecolor="rgba(0,0,0,0)",
+                      tickfont=dict(size=11, color=_TEXT), zeroline=False),
     }
-    fig.update_layout(title=dict(text=title, font=dict(size=13, color="#D4B0FF"), x=0, pad=dict(l=4)), **layout)
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
+        transition=_TRANSITION,
+        **layout,
+    )
     return fig
 
 
@@ -219,8 +248,14 @@ def bar_freq(df, x, y, title):
         annotation_font=dict(color=RED, size=11))
     layout = {
         **BASE,
-        "yaxis": dict(autorange="reversed", gridcolor=_GRID, tickfont=dict(size=11, color=_TEXT), linecolor="rgba(0,0,0,0)", zeroline=False),
-        "xaxis": dict(showgrid=True, gridcolor=_GRID, linecolor="rgba(0,0,0,0)", tickfont=dict(size=11, color=_TEXT), zeroline=False),
+        "yaxis": dict(autorange="reversed", gridcolor=_GRID, tickfont=dict(size=11, color=_TEXT),
+                      linecolor="rgba(0,0,0,0)", zeroline=False),
+        "xaxis": dict(showgrid=True, gridcolor=_GRID, linecolor="rgba(0,0,0,0)",
+                      tickfont=dict(size=11, color=_TEXT), zeroline=False),
     }
-    fig.update_layout(title=dict(text=title, font=dict(size=13, color="#D4B0FF"), x=0, pad=dict(l=4)), **layout)
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
+        transition=_TRANSITION,
+        **layout,
+    )
     return fig

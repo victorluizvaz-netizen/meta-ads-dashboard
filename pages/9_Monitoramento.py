@@ -18,8 +18,8 @@ st.markdown("""
 <style>
 /* Cards de conta via st.container(border=True) */
 div[data-testid="stVerticalBlockBorderWrapper"] {
-    background: linear-gradient(155deg, #180F34 0%, #120C25 100%) !important;
-    border: 1px solid rgba(168, 85, 247, 0.16) !important;
+    background: linear-gradient(155deg, #0A1020 0%, #060D1A 100%) !important;
+    border: 1px solid rgba(56, 189, 248, 0.14) !important;
     border-radius: 20px !important;
     box-shadow: 0 2px 28px rgba(0,0,0,0.50), inset 0 1px 0 rgba(255,255,255,0.025) !important;
     padding: 0.2rem 0.4rem !important;
@@ -29,7 +29,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] {
 div[data-testid="stToggle"] label p {
     font-size: 0.88rem !important;
     font-weight: 500 !important;
-    color: #C4B5D8 !important;
+    color: #93C5FD !important;
 }
 /* Caption text mais escuro */
 .stCaption p { color: #5B4E7A !important; font-size: 0.77rem !important; }
@@ -80,7 +80,7 @@ def _fmt_number(n: str) -> str:
 def _label(text: str) -> str:
     return (
         f'<span style="font-size:0.67rem;font-weight:700;letter-spacing:0.10em;'
-        f'text-transform:uppercase;color:#4A3870;display:block;margin-bottom:0.65rem;">'
+        f'text-transform:uppercase;color:#1A3A5C;display:block;margin-bottom:0.65rem;">'
         f'{text}</span>'
     )
 
@@ -89,7 +89,7 @@ def _label(text: str) -> str:
 st.markdown("""
 <div style="margin-bottom:1.4rem;">
   <div style="font-size:1.55rem;font-weight:800;letter-spacing:-0.03em;
-              background:linear-gradient(90deg,#F1ECF8 20%,#C084FC 100%);
+              background:linear-gradient(90deg,#F1ECF8 20%,#7DD3FC 100%);
               -webkit-background-clip:text;-webkit-text-fill-color:transparent;
               background-clip:text;line-height:1.2;margin-bottom:0.3rem;">
     Monitoramento
@@ -154,12 +154,12 @@ else:
 pl = f'{n_leads} conta{"s" if n_leads != 1 else ""} · leads'
 pc = f'{n_conv} conta{"s" if n_conv != 1 else ""} · conversas'
 leads_pill = (
-    f'<span style="background:rgba(168,85,247,0.10);border:1px solid rgba(168,85,247,0.22);'
-    f'border-radius:20px;padding:0.22rem 0.8rem;font-size:0.78rem;color:#C084FC;font-weight:500;">{pl}</span>'
+    f'<span style="background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.22);'
+    f'border-radius:20px;padding:0.22rem 0.8rem;font-size:0.78rem;color:#7DD3FC;font-weight:500;">{pl}</span>'
 )
 conv_pill = (
-    f'<span style="background:rgba(236,72,153,0.09);border:1px solid rgba(236,72,153,0.22);'
-    f'border-radius:20px;padding:0.22rem 0.8rem;font-size:0.78rem;color:#F9A8D4;font-weight:500;">{pc}</span>'
+    f'<span style="background:rgba(245,158,11,0.09);border:1px solid rgba(245,158,11,0.22);'
+    f'border-radius:20px;padding:0.22rem 0.8rem;font-size:0.78rem;color:#FCD34D;font-weight:500;">{pc}</span>'
 )
 st.markdown(
     f'<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1.6rem;">'
@@ -197,15 +197,15 @@ for idx, account in enumerate(contas):
         if snap_today:
             if leads_hoje > 0:
                 stat_chips += (
-                    f'<span style="background:rgba(168,85,247,0.10);border:1px solid rgba(168,85,247,0.20);'
+                    f'<span style="background:rgba(56,189,248,0.10);border:1px solid rgba(56,189,248,0.20);'
                     f'border-radius:12px;padding:0.12rem 0.6rem;font-size:0.71rem;'
-                    f'color:#C084FC;font-weight:600;">{int(leads_hoje)} leads</span> '
+                    f'color:#7DD3FC;font-weight:600;">{int(leads_hoje)} leads</span> '
                 )
             if conv_hoje > 0:
                 stat_chips += (
-                    f'<span style="background:rgba(236,72,153,0.09);border:1px solid rgba(236,72,153,0.20);'
+                    f'<span style="background:rgba(245,158,11,0.09);border:1px solid rgba(245,158,11,0.20);'
                     f'border-radius:12px;padding:0.12rem 0.6rem;font-size:0.71rem;'
-                    f'color:#F9A8D4;font-weight:600;">{int(conv_hoje)} conversas</span>'
+                    f'color:#FCD34D;font-weight:600;">{int(conv_hoje)} conversas</span>'
                 )
 
         check_html = ""
@@ -213,7 +213,7 @@ for idx, account in enumerate(contas):
             try:
                 dt_c_val = datetime.fromisoformat(last_check)
                 check_html = (
-                    f'<span style="color:#3D2E5A;font-size:0.72rem;">'
+                    f'<span style="color:#1E3A5A;font-size:0.72rem;">'
                     f'check {dt_c_val.strftime("%H:%M")}</span>'
                 )
             except Exception:
@@ -234,7 +234,7 @@ for idx, account in enumerate(contas):
             f'               display:inline-block;flex-shrink:0;"></span>{badge}</span>'
             f'    </div>'
             f'    <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">'
-            f'      <span style="color:#3D2E5A;font-size:0.74rem;'
+            f'      <span style="color:#1E3A5A;font-size:0.74rem;'
             f'             font-family:monospace;">{account_id}</span>'
             f'      {check_html}'
             f'    </div>'
@@ -272,9 +272,9 @@ for idx, account in enumerate(contas):
                 for i, num in enumerate(nums):
                     c_num, c_del = st.columns([5, 1])
                     is_grp   = _is_group(num)
-                    chip_bg  = 'rgba(236,72,153,0.07)' if is_grp else 'rgba(168,85,247,0.07)'
-                    chip_bd  = 'rgba(236,72,153,0.19)' if is_grp else 'rgba(168,85,247,0.17)'
-                    chip_clr = '#F9A8D4' if is_grp else '#C4B5D8'
+                    chip_bg  = 'rgba(245,158,11,0.07)' if is_grp else 'rgba(56,189,248,0.07)'
+                    chip_bd  = 'rgba(245,158,11,0.19)' if is_grp else 'rgba(56,189,248,0.17)'
+                    chip_clr = '#FCD34D' if is_grp else '#93C5FD'
                     type_lbl = (
                         '<span style="opacity:0.45;font-size:0.70rem;margin-right:0.3rem;'
                         'font-style:italic;">grupo</span>'
@@ -293,7 +293,7 @@ for idx, account in enumerate(contas):
                         st.rerun()
             else:
                 st.markdown(
-                    '<div style="color:#3D2E5A;font-size:0.82rem;padding:0.4rem 0;">'
+                    '<div style="color:#1E3A5A;font-size:0.82rem;padding:0.4rem 0;">'
                     'Nenhum destinatário cadastrado</div>',
                     unsafe_allow_html=True,
                 )
@@ -359,7 +359,7 @@ for idx, account in enumerate(contas):
 
         # ── Linha divisória + botões de ação ─────────────────────────────────────
         st.markdown(
-            '<div style="height:1px;background:rgba(168,85,247,0.08);margin:1rem 0 0.8rem;"></div>',
+            '<div style="height:1px;background:rgba(56,189,248,0.08);margin:1rem 0 0.8rem;"></div>',
             unsafe_allow_html=True,
         )
         col_save, col_test, _spc = st.columns([1, 1, 4])
@@ -403,7 +403,7 @@ for idx, account in enumerate(contas):
 
         # ── Acesso do cliente ────────────────────────────────────────────────────
         st.markdown(
-            '<div style="height:1px;background:rgba(168,85,247,0.08);margin:0.8rem 0;"></div>'
+            '<div style="height:1px;background:rgba(56,189,248,0.08);margin:0.8rem 0;"></div>'
             + _label("Acesso do cliente"),
             unsafe_allow_html=True,
         )
@@ -427,11 +427,11 @@ for idx, account in enumerate(contas):
                 st.warning("Configure `public_url` no `config_alertas.json` para gerar o link correto.")
             else:
                 st.markdown(
-                    f'<div style="background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.14);'
+                    f'<div style="background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.14);'
                     f'border-radius:10px;padding:0.6rem 1rem;margin-bottom:0.75rem;">'
-                    f'<div style="color:#4A3870;font-size:0.67rem;font-weight:700;letter-spacing:0.08em;'
+                    f'<div style="color:#1A3A5C;font-size:0.67rem;font-weight:700;letter-spacing:0.08em;'
                     f'text-transform:uppercase;margin-bottom:0.3rem;">Link ativo</div>'
-                    f'<code style="color:#A78BFA;font-size:0.79rem;word-break:break-all;">{client_url}</code>'
+                    f'<code style="color:#7DD3FC;font-size:0.79rem;word-break:break-all;">{client_url}</code>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -462,7 +462,7 @@ for idx, account in enumerate(contas):
                     st.success(f"Link enviado para {len(send_nums)} destinatário(s).")
         else:
             st.markdown(
-                '<span style="color:#3D2E5A;font-size:0.82rem;">Nenhum link ativo para esta conta.</span>',
+                '<span style="color:#1E3A5A;font-size:0.82rem;">Nenhum link ativo para esta conta.</span>',
                 unsafe_allow_html=True,
             )
             col_gen, _spc3 = st.columns([2, 4])
@@ -484,8 +484,8 @@ for idx, account in enumerate(contas):
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div style="color:#3D2E5A;font-size:0.75rem;margin:0.5rem 0 1.6rem;">'
-    'Runner <code style="background:rgba(168,85,247,0.08);padding:0.1rem 0.35rem;border-radius:4px;'
+    '<div style="color:#1E3A5A;font-size:0.75rem;margin:0.5rem 0 1.6rem;">'
+    'Runner <code style="background:rgba(56,189,248,0.08);padding:0.1rem 0.35rem;border-radius:4px;'
     'color:#7C5BA8;font-size:0.70rem;">alertas_runner.py</code> '
     '· a cada 15 min · horário ativo 06:00–23:00</div>',
     unsafe_allow_html=True,
@@ -522,18 +522,19 @@ if history_all:
         fig.add_trace(go.Scatter(
             x=df_plot["data"], y=df_plot[metric],
             mode="lines+markers",
-            line=dict(color="#A855F7", width=2),
-            marker=dict(color="#EC4899", size=6),
+            line=dict(color="#38BDF8", width=2),
+            marker=dict(color="#F59E0B", size=6),
             fill="tozeroy",
-            fillcolor="rgba(168,85,247,0.08)",
+            fillcolor="rgba(56,189,248,0.08)",
             hovertemplate="%{x|%d/%m}<br>%{y:.2f}<extra></extra>",
         ))
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=0, r=0, t=10, b=0), height=220,
-            xaxis=dict(showgrid=False, color="#7B6EA8"),
-            yaxis=dict(gridcolor="#1C1236", color="#7B6EA8"),
-            font=dict(color="#D4B0FF"),
+            xaxis=dict(showgrid=False, color="#4A7A9B"),
+            yaxis=dict(gridcolor="#0A1428", color="#4A7A9B"),
+            font=dict(color="#93C5FD"),
+            transition=dict(duration=420, easing="cubic-in-out"),
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.caption(
