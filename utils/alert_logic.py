@@ -1,7 +1,8 @@
 """
 Regras de alerta e builder do relatório diário.
 """
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 from utils.tz import now_br
 
 
@@ -233,6 +234,107 @@ def check_lead_increment(
                 })
 
     return alerts
+
+
+def check_budget_pace(history: dict, today_str: str, campaigns_budget: list) -> list:
+    """
+    Verifica se o ritmo de gasto do mês atual projeta estouro do orçamento.
+    Só alerta se a projeção superar 15% acima do orçamento total estimado.
+    Requer ao menos 3 dias de histórico no mês para ser relevante.
+    """
+    try:
+        today      = datetime.strptime(today_str, "%Y-%m-%d")
+        month_start = today.replace(day=1).strftime("%Y-%m-%d")
+        days_elapsed = today.day
+        days_in_month = calendar.monthrange(today.year, today.month)[1]
+
+        month_spend = sum(
+            v["spend"] for k, v in history.items()
+            if k >= month_start
+        )
+        if days_elapsed < 3 or month_spend == 0:
+            return []
+
+        daily_avg      = month_spend / days_elapsed
+        projected_total = daily_avg * days_in_month
+
+        total_budget = sum(
+            (int(c.get("daily_budget") or 0) / 100.0) * days_in_month
+            for c in campaigns_budget
+            if int(c.get("daily_budget") or 0) > 0
+        )
+        if total_budget <= 0 or projected_total <= total_budget * 1.15:
+            return []
+
+        esgota_dia = int(total_budget / daily_avg) if daily_avg > 0 else days_in_month
+        return [{
+            "key": f"budget_pace_{today.strftime('%Y-%m')}",
+            "msg": (
+                f"📈 *Ritmo de gasto acima do orçamento*\n"
+                f"Média diária: R$ {daily_avg:.2f}\n"
+                f"Projeção mensal: R$ {projected_total:.2f}\n"
+                f"Orçamento estimado: R$ {total_budget:.2f}\n"
+                f"⚠️ No ritmo atual, orçamento esgota ~dia {esgota_dia}"
+            ),
+        }]
+    except Exception:
+        return []
+
+
+def build_weekly_summary(label: str, history: dict, today_str: str) -> str:
+    """
+    Resumo semanal: últimos 7 dias vs 7 dias anteriores.
+    Disparado toda segunda-feira.
+    """
+    today = datetime.strptime(today_str, "%Y-%m-%d")
+
+    def _week_sum(days_back_start: int, days_back_end: int) -> dict:
+        totals = {"spend": 0.0, "leads": 0, "conversations": 0, "impressions": 0}
+        for i in range(days_back_end, days_back_start):
+            d = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            entry = history.get(d, {})
+            totals["spend"]         += entry.get("spend", 0)
+            totals["leads"]         += entry.get("leads", 0)
+            totals["conversations"] += entry.get("conversations", 0)
+            totals["impressions"]   += entry.get("impressions", 0)
+        return totals
+
+    this_week = _week_sum(7, 0)   # últimos 7 dias
+    last_week = _week_sum(14, 7)  # 7 dias anteriores
+
+    def _delta(cur, prev) -> str:
+        if prev == 0:
+            return ""
+        pct = (cur - prev) / prev * 100
+        arrow = "▲" if pct > 0 else "▼"
+        return f" ({arrow}{abs(pct):.0f}%)"
+
+    since = (today - timedelta(days=6)).strftime("%d/%m")
+    until = today.strftime("%d/%m")
+
+    lines = [
+        f"📊 *Resumo Semanal — {label}*",
+        f"Período: {since} a {until}",
+        "",
+        f"💰 Investimento: R$ {this_week['spend']:,.2f}{_delta(this_week['spend'], last_week['spend'])}",
+        f"👁️ Impressões: {this_week['impressions']:,}{_delta(this_week['impressions'], last_week['impressions'])}",
+    ]
+    if this_week["conversations"] > 0:
+        cpc = this_week["spend"] / this_week["conversations"]
+        lines.append(
+            f"💬 Conversas: {this_week['conversations']}{_delta(this_week['conversations'], last_week['conversations'])}"
+            f" · R$ {cpc:.2f}/conv"
+        )
+    if this_week["leads"] > 0:
+        cpl = this_week["spend"] / this_week["leads"]
+        lines.append(
+            f"🎯 Leads: {this_week['leads']}{_delta(this_week['leads'], last_week['leads'])}"
+            f" · CPL R$ {cpl:.2f}"
+        )
+    if this_week["conversations"] == 0 and this_week["leads"] == 0:
+        lines.append("❌ Sem conversas ou leads na semana")
+
+    return "\n".join(lines)
 
 
 def build_snapshot(current: list) -> dict:

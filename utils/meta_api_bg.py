@@ -94,6 +94,22 @@ def _read_token() -> str:
 ACCESS_TOKEN = _read_token()
 
 
+def validate_token() -> tuple[bool, str]:
+    """Valida o token Meta. Retorna (is_valid, error_msg)."""
+    try:
+        r = requests.get(
+            f"{BASE_URL}/me",
+            params={"access_token": ACCESS_TOKEN, "fields": "id"},
+            timeout=10,
+        )
+        data = r.json()
+        if "error" in data:
+            return False, data["error"].get("message", "Token inválido")
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
 def _api_get(url: str, params: dict) -> dict:
     params["access_token"] = ACCESS_TOKEN
     r = requests.get(url, params=params, timeout=30)

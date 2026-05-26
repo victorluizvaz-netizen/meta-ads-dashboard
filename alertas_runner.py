@@ -43,13 +43,14 @@ _CONFIG = _bootstrap()
 sys.path.insert(0, str(ROOT))
 
 from utils.meta_api_bg import (
-    get_insights_bg, get_campaigns_bg,
+    get_insights_bg, get_campaigns_bg, validate_token,
     get_insights_for_report, get_adset_insights_for_report, get_ad_insights_for_report,
 )
 from utils.whatsapp    import send_message, send_document
 from utils.alert_logic import (
     check_alerts, build_daily_report, build_persistent_summary,
     check_lead_increment, build_snapshot,
+    check_budget_pace, build_weekly_summary,
 )
 from utils.tz import now_br
 
@@ -308,6 +309,117 @@ def _process_schedules(config: dict):
             print(f"  [SCHED] Erro ao salvar config: {e}")
 
 
+def _all_numbers(config: dict) -> list:
+    """Retorna lista deduplicada de todos os destinatários configurados."""
+    seen, result = set(), []
+    for acct in config.get("contas", []):
+        for n in (acct.get("whatsapps") or ([acct["whatsapp"]] if acct.get("whatsapp") else [])):
+            if n and n not in seen:
+                seen.add(n)
+                result.append(n)
+    return result
+
+
+def _send_heartbeat(config: dict, log: dict, evo: dict, today: str, now_iso: str):
+    """Automação 1 — heartbeat diário às 06:00."""
+    sent = log.setdefault("heartbeat_sent", {})
+    if sent.get(today):
+        return
+    contas     = config.get("contas", [])
+    n_leads    = sum(1 for c in contas if c.get("monitor_leads"))
+    n_conv     = sum(1 for c in contas if c.get("monitor_conversations"))
+    now_fmt    = now_br().strftime("%d/%m/%Y %H:%M")
+    msg = (
+        f"✅ *Runner Meta Ads ativo*\n"
+        f"📅 {now_fmt}\n"
+        f"📊 {len(contas)} conta(s) monitorada(s)\n"
+        f"🎯 Leads: {n_leads} · 💬 Conversas: {n_conv}"
+    )
+    ok = _send_all(evo, _all_numbers(config), msg)
+    print(f"[HEARTBEAT] {'OK' if ok else 'FALHA'}")
+    if ok:
+        sent[today] = now_iso
+
+
+def _check_token(config: dict, log: dict, evo: dict, today: str):
+    """Automação 2 — alerta se o token Meta estiver inválido."""
+    checked = log.setdefault("token_check", {})
+    if checked.get(today):
+        return
+    is_valid, error_msg = validate_token()
+    checked[today] = now_br().isoformat()
+    if not is_valid:
+        msg = (
+            f"🔴 *Token Meta Ads inválido!*\n"
+            f"O runner não conseguirá buscar dados.\n"
+            f"Erro: {error_msg}\n"
+            f"Atualize o token em config_alertas.json."
+        )
+        _send_all(evo, _all_numbers(config), msg)
+        print(f"[TOKEN] INVÁLIDO — {error_msg}")
+    else:
+        print("[TOKEN] OK")
+
+
+def _send_weekly_summaries(config: dict, log: dict, evo: dict, today: str, now_iso: str):
+    """Automação 4 — resumo semanal toda segunda-feira."""
+    sent = log.setdefault("weekly_sent", {})
+    history_all = log.get("history", {})
+    for account in config.get("contas", []):
+        account_id = account["account_id"]
+        label      = account.get("label", account_id)
+        key        = f"{account_id}_{today}"
+        if sent.get(key):
+            continue
+        history = history_all.get(account_id, {})
+        if not history:
+            continue
+        whatsapps = account.get("whatsapps") or (
+            [account["whatsapp"]] if account.get("whatsapp") else []
+        )
+        msg = build_weekly_summary(label, history, today)
+        ok  = _send_all(evo, whatsapps, msg)
+        print(f"  [SEMANAL/{label}/{'OK' if ok else 'FALHA'}]")
+        if ok:
+            sent[key] = now_iso
+
+
+def _cleanup_log(log: dict):
+    """Automação 6 — limpeza semanal do log (entradas > 60 dias)."""
+    last = log.get("last_cleanup")
+    if last:
+        try:
+            if (now_br() - datetime.fromisoformat(last)).days < 7:
+                return
+        except Exception:
+            pass
+
+    cutoff  = (now_br() - timedelta(days=60)).strftime("%Y-%m-%d")
+    removed = 0
+
+    for acct_id in list(log.get("history", {})):
+        old = [k for k in log["history"][acct_id] if k < cutoff]
+        for k in old:
+            del log["history"][acct_id][k]
+            removed += 1
+
+    old_reports = [k for k in log.get("reports_sent", {})
+                   if k.rsplit("_", 1)[-1] < cutoff]
+    for k in old_reports:
+        del log["reports_sent"][k]
+        removed += 1
+
+    old_weekly = [k for k in log.get("weekly_sent", {})
+                  if k.rsplit("_", 1)[-1] < cutoff]
+    for k in old_weekly:
+        del log["weekly_sent"][k]
+        removed += 1
+
+    log["last_cleanup"] = now_br().isoformat()
+    if removed:
+        print(f"[CLEANUP] {removed} entradas removidas (anterior a {cutoff})")
+
+
 def main():
     if not is_active_hours():
         print(f"Fora do horário ativo ({ACTIVE_HOURS[0]:02d}:00–{ACTIVE_HOURS[1]:02d}:00). Encerrando.")
@@ -332,6 +444,16 @@ def main():
     yesterday   = (datetime.today() - timedelta(days=1)).strftime("%Y-%m-%d")
     now_iso     = now_br().isoformat()
     send_report = is_report_window(report_time)
+
+    # ── Automação 1: heartbeat diário ────────────────────────────────────────
+    _send_heartbeat(config, log, evo, today, now_iso)
+
+    # ── Automação 2: validação do token Meta ─────────────────────────────────
+    _check_token(config, log, evo, today)
+
+    # ── Automação 4: resumo semanal (toda segunda-feira) ─────────────────────
+    if now_br().weekday() == 0 and send_report:
+        _send_weekly_summaries(config, log, evo, today, now_iso)
 
     active       = log["active"]
     reports_sent = log["reports_sent"]
@@ -400,8 +522,11 @@ def main():
             print(f"  ERRO campanhas: {e}")
             campaigns_budget = []
 
-        current_alerts      = check_alerts(insights_today, campaigns_budget, thresholds)
-        current_keys        = {a["key"] for a in current_alerts}
+        # ── Automação 5: ritmo de gasto vs orçamento ─────────────────────────
+        acct_history = log.get("history", {}).get(account_id, {})
+        pace_alerts  = check_budget_pace(acct_history, today, campaigns_budget)
+        current_alerts = check_alerts(insights_today, campaigns_budget, thresholds) + pace_alerts
+        current_keys   = {a["key"] for a in current_alerts}
         account_active_keys = {k for k, v in active.items() if v.get("account_id") == account_id}
 
         for alert in current_alerts:
@@ -450,6 +575,10 @@ def main():
 
     log["active"]       = active
     log["reports_sent"] = reports_sent
+
+    # ── Automação 6: limpeza semanal do log ──────────────────────────────────
+    _cleanup_log(log)
+
     save_log(log)
 
     _process_schedules(config)
