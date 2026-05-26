@@ -169,8 +169,10 @@ st.markdown(
 
 # ── Cards por conta ─────────────────────────────────────────────────────────────
 for idx, account in enumerate(contas):
-    account_id = account["account_id"]
-    label      = account.get("label", account_id)
+    account_id   = account["account_id"]
+    label        = account.get("label", account_id)
+    client_token = account.get("client_token", "")
+    client_url   = f"{public_url}/Cliente?token={client_token}" if (public_url and client_token) else None
 
     nums_key = f"_mon_nums_{account_id}"
     if nums_key not in st.session_state:
@@ -290,6 +292,9 @@ for idx, account in enumerate(contas):
                     )
                     if c_del.button("✕", key=f"del_{account_id}_{i}", help="Remover"):
                         st.session_state[nums_key].pop(i)
+                        cfg["contas"][idx]["whatsapps"] = list(st.session_state[nums_key])
+                        cfg["contas"][idx]["whatsapp"]  = st.session_state[nums_key][0] if st.session_state[nums_key] else ""
+                        _save_config(cfg)
                         st.rerun()
             else:
                 st.markdown(
@@ -310,6 +315,9 @@ for idx, account in enumerate(contas):
                 if cleaned.isdigit() and len(cleaned) >= 10:
                     if cleaned not in st.session_state[nums_key]:
                         st.session_state[nums_key].append(cleaned)
+                        cfg["contas"][idx]["whatsapps"] = list(st.session_state[nums_key])
+                        cfg["contas"][idx]["whatsapp"]  = st.session_state[nums_key][0]
+                        _save_config(cfg)
                         if client_url and evo.get("base_url"):
                             send_message(
                                 evo["base_url"], evo["instance"], evo["apikey"], cleaned,
@@ -353,6 +361,10 @@ for idx, account in enumerate(contas):
                             jid = opts[sel_grp]
                             if jid not in st.session_state[nums_key]:
                                 st.session_state[nums_key].append(jid)
+                                cfg["contas"][idx]["whatsapps"] = list(st.session_state[nums_key])
+                                cfg["contas"][idx]["whatsapp"]  = st.session_state[nums_key][0]
+                                _save_config(cfg)
+                                st.success("Grupo adicionado e salvo.")
                                 st.rerun()
                             else:
                                 st.warning("Grupo já adicionado.")
@@ -407,9 +419,6 @@ for idx, account in enumerate(contas):
             + _label("Acesso do cliente"),
             unsafe_allow_html=True,
         )
-
-        client_token = account.get("client_token", "")
-        client_url   = f"{public_url}/Cliente?token={client_token}" if (public_url and client_token) else None
 
         def _send_panel_link(url: str, nums: list):
             if not evo.get("base_url") or not nums:
