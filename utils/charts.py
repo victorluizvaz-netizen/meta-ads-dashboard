@@ -65,7 +65,7 @@ def _apply(fig, title):
     fig.update_layout(
         title=dict(
             text=title,
-            font=dict(size=13, color="#93C5FD", family="Inter, sans-serif", weight=600),
+            font=dict(size=13, color="#93C5FD", family="Inter, sans-serif"),
             x=0,
             pad=dict(l=4),
         ),
