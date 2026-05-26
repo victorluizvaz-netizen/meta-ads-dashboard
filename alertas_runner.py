@@ -49,8 +49,7 @@ from utils.meta_api_bg import (
 from utils.whatsapp    import send_message, send_document
 from utils.alert_logic import (
     check_alerts, build_daily_report, build_persistent_summary,
-    check_lead_increment, build_snapshot,
-    check_budget_pace, build_weekly_summary,
+    check_lead_increment, build_snapshot, check_budget_pace,
 )
 from utils.tz import now_br
 
@@ -361,28 +360,6 @@ def _check_token(config: dict, log: dict, evo: dict, today: str):
         print("[TOKEN] OK")
 
 
-def _send_weekly_summaries(config: dict, log: dict, evo: dict, today: str, now_iso: str):
-    """Automação 4 — resumo semanal toda segunda-feira."""
-    sent = log.setdefault("weekly_sent", {})
-    history_all = log.get("history", {})
-    for account in config.get("contas", []):
-        account_id = account["account_id"]
-        label      = account.get("label", account_id)
-        key        = f"{account_id}_{today}"
-        if sent.get(key):
-            continue
-        history = history_all.get(account_id, {})
-        if not history:
-            continue
-        whatsapps = account.get("whatsapps") or (
-            [account["whatsapp"]] if account.get("whatsapp") else []
-        )
-        msg = build_weekly_summary(label, history, today)
-        ok  = _send_all(evo, whatsapps, msg)
-        print(f"  [SEMANAL/{label}/{'OK' if ok else 'FALHA'}]")
-        if ok:
-            sent[key] = now_iso
-
 
 def _cleanup_log(log: dict):
     """Automação 6 — limpeza semanal do log (entradas > 60 dias)."""
@@ -450,10 +427,6 @@ def main():
 
     # ── Automação 2: validação do token Meta ─────────────────────────────────
     _check_token(config, log, evo, today)
-
-    # ── Automação 4: resumo semanal (toda segunda-feira) ─────────────────────
-    if now_br().weekday() == 0 and send_report:
-        _send_weekly_summaries(config, log, evo, today, now_iso)
 
     active       = log["active"]
     reports_sent = log["reports_sent"]
