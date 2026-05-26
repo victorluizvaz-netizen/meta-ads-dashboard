@@ -167,6 +167,63 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Meus números (admin) ────────────────────────────────────────────────────────
+st.markdown(
+    section_header("Meus números", "recebem todos os alertas: leads, conversas, performance, relatórios"),
+    unsafe_allow_html=True,
+)
+
+_ADMIN_KEY = "_admin_nums"
+if _ADMIN_KEY not in st.session_state:
+    st.session_state[_ADMIN_KEY] = list(cfg.get("admin_whatsapps") or [])
+
+with st.container(border=True):
+    admin_nums_now = st.session_state[_ADMIN_KEY]
+    if admin_nums_now:
+        for i, num in enumerate(admin_nums_now):
+            c_num, c_del = st.columns([5, 1])
+            c_num.markdown(
+                f'<div style="background:rgba(74,222,128,0.07);border:1px solid rgba(74,222,128,0.19);'
+                f'border-radius:8px;padding:0.36rem 0.85rem;font-size:0.81rem;'
+                f'color:#86EFAC;font-family:monospace;margin-bottom:4px;">'
+                f'{_fmt_number(num)}</div>',
+                unsafe_allow_html=True,
+            )
+            if c_del.button("✕", key=f"del_admin_{i}", help="Remover"):
+                st.session_state[_ADMIN_KEY].pop(i)
+                cfg["admin_whatsapps"] = list(st.session_state[_ADMIN_KEY])
+                _save_config(cfg)
+                st.rerun()
+    else:
+        st.markdown(
+            '<div style="color:#1E3A5A;font-size:0.82rem;padding:0.4rem 0;">'
+            '⚠️ Nenhum número admin cadastrado — você não receberá alertas de performance.</div>',
+            unsafe_allow_html=True,
+        )
+
+    c_inp_a, c_add_a = st.columns([4, 1])
+    new_admin_num = c_inp_a.text_input(
+        "Número",
+        placeholder="5549999999999",
+        label_visibility="collapsed",
+        key="new_admin_num",
+    )
+    if c_add_a.button("＋", key="add_admin_num", use_container_width=True, help="Adicionar meu número"):
+        cleaned_a = new_admin_num.strip().replace("+", "").replace(" ", "").replace("-", "")
+        if cleaned_a.isdigit() and len(cleaned_a) >= 10:
+            if cleaned_a not in st.session_state[_ADMIN_KEY]:
+                st.session_state[_ADMIN_KEY].append(cleaned_a)
+                cfg["admin_whatsapps"] = list(st.session_state[_ADMIN_KEY])
+                _save_config(cfg)
+                st.success("Número admin adicionado.")
+                st.rerun()
+            else:
+                st.warning("Número já cadastrado.")
+        else:
+            st.error("Inválido. Use dígitos no formato internacional, ex: `5549999999999`")
+
+st.markdown("<div style='margin-bottom:1.2rem;'></div>", unsafe_allow_html=True)
+
 # ── Cards por conta ─────────────────────────────────────────────────────────────
 for idx, account in enumerate(contas):
     account_id   = account["account_id"]
@@ -267,7 +324,7 @@ for idx, account in enumerate(contas):
 
         # ── Direita: destinatários ───────────────────────────────────────────────
         with col_right:
-            st.markdown(_label("Destinatários WhatsApp"), unsafe_allow_html=True)
+            st.markdown(_label("Grupo do cliente (leads e conversas)"), unsafe_allow_html=True)
             nums = st.session_state[nums_key]
 
             if nums:

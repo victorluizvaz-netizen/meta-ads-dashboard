@@ -110,6 +110,26 @@ def _send_all(evo: dict, numbers: list, text: str) -> bool:
     return any(results)
 
 
+def _admin_numbers(config: dict) -> list:
+    """Números do administrador — recebem todos os alertas (performance, sistema, leads, conversas)."""
+    nums = config.get("admin_whatsapps", [])
+    if nums:
+        return [n for n in nums if n]
+    # Fallback: se admin_whatsapps não estiver configurado, usa _all_numbers para não quebrar instalações antigas
+    return _all_numbers(config)
+
+
+def _union_numbers(*lists) -> list:
+    """União deduplicada de listas de números, mantendo ordem."""
+    seen, result = set(), []
+    for lst in lists:
+        for n in (lst or []):
+            if n and n not in seen:
+                seen.add(n)
+                result.append(n)
+    return result
+
+
 def is_report_window(report_time: str) -> bool:
     now = now_br()
     h, m = map(int, report_time.split(":"))
@@ -334,7 +354,7 @@ def _send_heartbeat(config: dict, log: dict, evo: dict, today: str, now_iso: str
         f"📊 {len(contas)} conta(s) monitorada(s)\n"
         f"🎯 Leads: {n_leads} · 💬 Conversas: {n_conv}"
     )
-    ok = _send_all(evo, _all_numbers(config), msg)
+    ok = _send_all(evo, _admin_numbers(config), msg)
     print(f"[HEARTBEAT] {'OK' if ok else 'FALHA'}")
     if ok:
         sent[today] = now_iso
@@ -354,7 +374,7 @@ def _check_token(config: dict, log: dict, evo: dict, today: str):
             f"Erro: {error_msg}\n"
             f"Atualize o token em config_alertas.json."
         )
-        _send_all(evo, _all_numbers(config), msg)
+        _send_all(evo, _admin_numbers(config), msg)
         print(f"[TOKEN] INVÁLIDO — {error_msg}")
     else:
         print("[TOKEN] OK")
@@ -454,13 +474,16 @@ def main():
         # ── Sempre (a cada 15 min): novos leads e conversas ──────────────────
         mon_leads = account.get("monitor_leads", False)
         mon_conv  = account.get("monitor_conversations", False)
+        admin_nums = _admin_numbers(config)
         if mon_leads or mon_conv:
             stored_snap = log.get("leads_snapshot", {}).get(account_id, {})
             if stored_snap.get("date") != today:
                 stored_snap = {}   # novo dia → reseta baseline sem alertar
             lead_alerts = check_lead_increment(insights_today, stored_snap, mon_leads, mon_conv)
+            # Leads/conversas → grupo do cliente + admin (deduplicado)
+            lead_recipients = _union_numbers(whatsapps, admin_nums)
             for la in lead_alerts:
-                ok = _send_all(evo, whatsapps, la["msg"])
+                ok = _send_all(evo, lead_recipients, la["msg"])
                 print(f"  [LEAD/{'OK' if ok else 'FALHA'}] {la['msg'][:60].replace(chr(10), ' ')}")
             log.setdefault("leads_snapshot", {})[account_id] = build_snapshot(insights_today)
 
@@ -504,7 +527,8 @@ def main():
 
         for alert in current_alerts:
             if alert["key"] not in active:
-                ok = _send_all(evo, whatsapps, alert["msg"])
+                # Alertas de performance → somente admin (não vai para grupos dos clientes)
+                ok = _send_all(evo, admin_nums, alert["msg"])
                 status = "NOVO/OK" if ok else "NOVO/FALHA"
                 print(f"  [{status}] {alert['key']}")
                 if ok:
@@ -526,7 +550,8 @@ def main():
 
         persistent = [v for k, v in active.items() if v.get("account_id") == account_id]
         if persistent:
-            ok = _send_all(evo, whatsapps, build_persistent_summary(label, persistent))
+            # Resumo de persistentes → somente admin
+            ok = _send_all(evo, admin_nums, build_persistent_summary(label, persistent))
             print(f"  [{'OK' if ok else 'FALHA'}] Resumo: {len(persistent)} persistente(s)")
 
         # ── Relatório diário às 08:00 (apenas no check completo) ─────────────
@@ -539,7 +564,8 @@ def main():
                     print(f"  ERRO insights ontem: {e}")
                     insights_yesterday = []
                 persistent = [v for k, v in active.items() if v.get("account_id") == account_id]
-                ok = _send_all(evo, whatsapps, build_daily_report(label, insights_yesterday, yesterday, persistent))
+                # Relatório diário → somente admin
+                ok = _send_all(evo, admin_nums, build_daily_report(label, insights_yesterday, yesterday, persistent))
                 print(f"  [{'OK' if ok else 'FALHA'}] Relatório diário ({yesterday})")
                 if ok:
                     reports_sent[report_key] = now_iso
