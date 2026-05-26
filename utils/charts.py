@@ -188,7 +188,7 @@ def bar(df, x, y, title, color=BLUE, horizontal=False):
             ),
         }
         fig.update_layout(
-            title=dict(text=title, font=dict(size=13, color="#93C5FD", weight=600), x=0, pad=dict(l=4)),
+            title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
             transition=_TRANSITION,
             **layout,
         )
@@ -203,7 +203,7 @@ def bar(df, x, y, title, color=BLUE, horizontal=False):
             cliponaxis=False,
         ))
         fig.update_layout(
-            title=dict(text=title, font=dict(size=13, color="#93C5FD", weight=600), x=0, pad=dict(l=4)),
+            title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
             xaxis_tickangle=-35,
             transition=_TRANSITION,
             **BASE,
@@ -233,11 +233,11 @@ def donut(labels, values, title):
     fig.add_annotation(
         text=center_text,
         x=0.5, y=0.5,
-        font=dict(size=15, color="#EFF6FF", family="Inter, sans-serif", weight=700),
+        font=dict(size=15, color="#EFF6FF", family="Inter, sans-serif"),
         showarrow=False,
     )
     fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#93C5FD", weight=600), x=0, pad=dict(l=4)),
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
         legend=dict(font=dict(size=11, color=_TEXT), bgcolor="rgba(0,0,0,0)"),
         transition=_TRANSITION,
         **{k: v for k, v in BASE.items() if k not in ("legend",)},
@@ -267,7 +267,7 @@ def bar_compare(categories, values_current, values_prev, title,
     ))
     fig.update_layout(
         barmode="group",
-        title=dict(text=title, font=dict(size=13, color="#93C5FD", weight=600), x=0, pad=dict(l=4)),
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
         transition=_TRANSITION,
         **BASE,
     )
@@ -304,7 +304,7 @@ def bar_with_avg(df, x, y, title, color=GREEN, avg_label="Média"):
                       tickfont=dict(size=11, color=_TEXT), zeroline=False),
     }
     fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#93C5FD", weight=600), x=0, pad=dict(l=4)),
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
         transition=_TRANSITION,
         **layout,
     )
@@ -339,7 +339,7 @@ def bar_freq(df, x, y, title):
                       tickfont=dict(size=11, color=_TEXT), zeroline=False),
     }
     fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#93C5FD", weight=600), x=0, pad=dict(l=4)),
+        title=dict(text=title, font=dict(size=13, color="#93C5FD"), x=0, pad=dict(l=4)),
         transition=_TRANSITION,
         **layout,
     )
