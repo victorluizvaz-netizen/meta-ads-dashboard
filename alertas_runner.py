@@ -313,7 +313,17 @@ def main():
         print(f"Fora do horário ativo ({ACTIVE_HOURS[0]:02d}:00–{ACTIVE_HOURS[1]:02d}:00). Encerrando.")
         return
 
+    # Sincroniza config com Gist antes de executar (captura mudanças feitas no Cloud)
     config = _CONFIG
+    try:
+        from utils.config_loader import sync_from_gist
+        synced = sync_from_gist(config)
+        if synced is not config:
+            print("[GIST] Config sincronizado.")
+            config = synced
+    except Exception as e:
+        print(f"[GIST] Sync ignorado: {e}")
+
     log    = load_log()
 
     evo         = config["evolution_api"]
