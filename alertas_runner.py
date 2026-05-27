@@ -479,7 +479,16 @@ def main():
             stored_snap = log.get("leads_snapshot", {}).get(account_id, {})
             if stored_snap.get("date") != today:
                 stored_snap = {}   # novo dia → reseta baseline sem alertar
-            lead_alerts = check_lead_increment(insights_today, stored_snap, mon_leads, mon_conv)
+            # Filtra campanhas excluídas dos alertas (por trecho do nome, case-insensitive)
+            exclude_terms = [e.lower() for e in account.get("exclude_campaigns", []) if e]
+            insights_for_alerts = [
+                r for r in insights_today
+                if not any(t in r["campaign_name"].lower() for t in exclude_terms)
+            ] if exclude_terms else insights_today
+            if exclude_terms and len(insights_for_alerts) < len(insights_today):
+                n_excl = len(insights_today) - len(insights_for_alerts)
+                print(f"  [FILTRO] {n_excl} campanha(s) excluída(s) dos alertas de leads/conversas")
+            lead_alerts = check_lead_increment(insights_for_alerts, stored_snap, mon_leads, mon_conv)
             # Leads/conversas → grupo do cliente + admin (deduplicado)
             lead_recipients = _union_numbers(whatsapps, admin_nums)
             for la in lead_alerts:

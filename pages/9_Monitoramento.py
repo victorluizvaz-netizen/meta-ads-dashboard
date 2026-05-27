@@ -235,6 +235,10 @@ for idx, account in enumerate(contas):
     if nums_key not in st.session_state:
         st.session_state[nums_key] = _whatsapps_for(account)
 
+    excl_key = f"_excl_{account_id}"
+    if excl_key not in st.session_state:
+        st.session_state[excl_key] = list(account.get("exclude_campaigns", []))
+
     acct_snap  = snap_all.get(account_id, {})
     snap_today = acct_snap.get("date") == today_str
     leads_hoje = sum(acct_snap.get("leads", {}).values())         if snap_today else 0
@@ -426,6 +430,49 @@ for idx, account in enumerate(contas):
                             else:
                                 st.warning("Grupo já adicionado.")
 
+        # ── Campanhas excluídas dos alertas ──────────────────────────────────────
+        excl_list = st.session_state[excl_key]
+        excl_label = f"Excluir campanhas dos alertas ({len(excl_list)} filtro{'s' if len(excl_list) != 1 else ''})" if excl_list else "Excluir campanhas dos alertas"
+        with st.expander(excl_label):
+            st.caption("Campanhas cujo nome contiver qualquer um dos trechos abaixo não dispararão alertas de leads ou conversas.")
+            if excl_list:
+                for ei, term in enumerate(excl_list):
+                    ce_chip, ce_del = st.columns([5, 1])
+                    ce_chip.markdown(
+                        f'<div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.18);'
+                        f'border-radius:8px;padding:0.32rem 0.8rem;font-size:0.82rem;'
+                        f'color:#FCA5A5;font-family:monospace;margin-bottom:4px;">'
+                        f'🚫 {term}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if ce_del.button("✕", key=f"del_excl_{account_id}_{ei}", help="Remover filtro"):
+                        st.session_state[excl_key].pop(ei)
+                        cfg["contas"][idx]["exclude_campaigns"] = list(st.session_state[excl_key])
+                        _save_config(cfg)
+                        st.rerun()
+            else:
+                st.markdown('<span style="color:#1E3A5A;font-size:0.82rem;">Nenhuma campanha excluída.</span>', unsafe_allow_html=True)
+
+            ce_inp, ce_add = st.columns([4, 1])
+            new_excl = ce_inp.text_input(
+                "Trecho do nome",
+                placeholder="Ex: Awareness, Remarketing, Teste",
+                label_visibility="collapsed",
+                key=f"new_excl_{account_id}",
+            )
+            if ce_add.button("＋", key=f"add_excl_{account_id}", use_container_width=True, help="Adicionar filtro"):
+                term = new_excl.strip()
+                if term:
+                    if term not in st.session_state[excl_key]:
+                        st.session_state[excl_key].append(term)
+                        cfg["contas"][idx]["exclude_campaigns"] = list(st.session_state[excl_key])
+                        _save_config(cfg)
+                        st.rerun()
+                    else:
+                        st.warning("Filtro já existe.")
+                else:
+                    st.error("Digite um trecho do nome da campanha.")
+
         # ── Linha divisória + botões de ação ─────────────────────────────────────
         st.markdown(
             '<div style="height:1px;background:rgba(56,189,248,0.08);margin:1rem 0 0.8rem;"></div>',
@@ -437,8 +484,9 @@ for idx, account in enumerate(contas):
             cfg["contas"][idx]["monitor_leads"]         = bool(st.session_state.get(f"tog_leads_{account_id}", False))
             cfg["contas"][idx]["monitor_conversations"] = bool(st.session_state.get(f"tog_conv_{account_id}", False))
             nums_to_save = list(st.session_state[nums_key])
-            cfg["contas"][idx]["whatsapps"] = nums_to_save
-            cfg["contas"][idx]["whatsapp"]  = nums_to_save[0] if nums_to_save else ""
+            cfg["contas"][idx]["whatsapps"]          = nums_to_save
+            cfg["contas"][idx]["whatsapp"]           = nums_to_save[0] if nums_to_save else ""
+            cfg["contas"][idx]["exclude_campaigns"]  = list(st.session_state[excl_key])
             _save_config(cfg)
             _load_log.clear()
             st.success(f"Configurações de **{label}** salvas.")

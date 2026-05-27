@@ -21,6 +21,7 @@
       "whatsapps": [
         "120363XXXXXXXXXXXXXXXXXX@g.us"
       ],
+      "exclude_campaigns": [],
       "thresholds": {
         "budget_warning_pct": 70,
         "ctr_min": 0.5,
