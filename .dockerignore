@@ -1,0 +1,12 @@
+# Mantém a imagem da API enxuta e sem segredos
+.git
+client-app
+__pycache__
+**/__pycache__
+*.pyc
+.venv
+venv
+.streamlit
+*.log
+alertas_log.json
+config_alertas.json

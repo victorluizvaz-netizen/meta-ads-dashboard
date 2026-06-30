@@ -14,6 +14,9 @@ _GIST_FILENAME = "config_alertas.json"
 def _gist_id(cfg: dict | None = None) -> str:
     if cfg and cfg.get("github_gist_id"):
         return cfg["github_gist_id"]
+    import os
+    if os.getenv("GITHUB_GIST_ID"):
+        return os.environ["GITHUB_GIST_ID"]
     try:
         import streamlit as st
         return st.secrets.get("GITHUB_GIST_ID", "")
@@ -24,6 +27,9 @@ def _gist_id(cfg: dict | None = None) -> str:
 def _gh_token(cfg: dict | None = None) -> str:
     if cfg and cfg.get("github_token"):
         return cfg["github_token"]
+    import os
+    if os.getenv("GITHUB_TOKEN"):
+        return os.environ["GITHUB_TOKEN"]
     try:
         import streamlit as st
         return st.secrets.get("GITHUB_TOKEN", "")
