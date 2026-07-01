@@ -235,6 +235,33 @@ def get_insights(
     }
 
 
+@app.get("/api/campaigns")
+def get_campaigns(token: str = Query(...)):
+    """Returns the account's campaigns (id, name, status) for the client token.
+    Scoped strictly to the token's account — a client can only see their own."""
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+
+    account_id = account["account_id"]
+    data = _api_get(f"{BASE_URL}/{account_id}/campaigns", {
+        "fields": "id,name,status,effective_status,objective",
+        "limit": 200,
+    })
+    campaigns = [
+        {
+            "id":               c["id"],
+            "name":             c.get("name", ""),
+            "status":           c.get("status", ""),
+            "effective_status": c.get("effective_status", c.get("status", "")),
+            "objective":        c.get("objective", ""),
+        }
+        for c in _paginate(data)
+        if c.get("status") not in ("DELETED", "ARCHIVED")
+    ]
+    return {"campaigns": campaigns}
+
+
 @app.get("/api/adsets")
 def get_adsets(token: str = Query(...)):
     """Returns adsets list for the account."""
