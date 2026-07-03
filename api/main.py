@@ -262,6 +262,186 @@ def get_campaigns(token: str = Query(...)):
     return {"campaigns": campaigns}
 
 
+# ── Detalhe de campanha (client token) ──────────────────────────────────────────
+GENDER_MAP = {"1": "Masculino", "2": "Feminino", 1: "Masculino", 2: "Feminino",
+              "male": "Masculino", "female": "Feminino", "unknown": "Não informado"}
+
+BREAKDOWN_MAP = {
+    "age_gender": "age,gender",
+    "region":     "region",
+    "device":     "impression_device",
+    "platform":   "publisher_platform",
+}
+
+
+def _budget_reais(v) -> float | None:
+    """Orçamentos vêm em centavos (string). Converte para reais."""
+    try:
+        f = float(v)
+        return f / 100.0 if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _require_campaign(token: str, campaign_id: str) -> dict:
+    """Valida o token e garante que a campanha pertence à conta do token (anti-IDOR).
+    Impede que um cliente leia dados de campanha de outra conta passando outro id."""
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    acct = str(account["account_id"]).replace("act_", "")
+    try:
+        info = _api_get(f"{BASE_URL}/{campaign_id}", {"fields": "account_id"})
+    except HTTPException:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+    if str(info.get("account_id")) != acct:
+        raise HTTPException(status_code=403, detail="Campanha não pertence a esta conta.")
+    return account
+
+
+def _summarize_targeting(adsets: list[dict]) -> dict:
+    """Consolida o público CONFIGURADO a partir do targeting dos conjuntos."""
+    age_min = age_max = None
+    genders, countries, regions, cities = set(), set(), set(), set()
+    device_platforms, publisher_platforms, user_os, interests, opt_goals = set(), set(), set(), set(), set()
+    for a in adsets:
+        t = a.get("targeting", {}) or {}
+        if t.get("age_min"):
+            age_min = min(age_min, t["age_min"]) if age_min else t["age_min"]
+        if t.get("age_max"):
+            age_max = max(age_max, t["age_max"]) if age_max else t["age_max"]
+        for g in t.get("genders", []) or []:
+            genders.add(GENDER_MAP.get(str(g), str(g)))
+        geo = t.get("geo_locations", {}) or {}
+        for cc in geo.get("countries", []) or []:
+            countries.add(cc)
+        for r in geo.get("regions", []) or []:
+            if r.get("name"):
+                regions.add(r["name"])
+        for cy in geo.get("cities", []) or []:
+            if cy.get("name"):
+                cities.add(cy["name"])
+        for d in t.get("device_platforms", []) or []:
+            device_platforms.add(d)
+        for p in t.get("publisher_platforms", []) or []:
+            publisher_platforms.add(p)
+        for o in t.get("user_os", []) or []:
+            user_os.add(o)
+        for spec in t.get("flexible_spec", []) or []:
+            for it in spec.get("interests", []) or []:
+                if it.get("name"):
+                    interests.add(it["name"])
+        for it in t.get("interests", []) or []:
+            if isinstance(it, dict) and it.get("name"):
+                interests.add(it["name"])
+        if a.get("optimization_goal"):
+            opt_goals.add(a["optimization_goal"])
+    return {
+        "age_min": age_min, "age_max": age_max,
+        "genders": sorted(genders),
+        "countries": sorted(countries), "regions": sorted(regions), "cities": sorted(cities),
+        "device_platforms": sorted(device_platforms),
+        "publisher_platforms": sorted(publisher_platforms),
+        "user_os": sorted(user_os),
+        "interests": sorted(interests)[:30],
+        "optimization_goals": sorted(opt_goals),
+        "adset_count": len(adsets),
+    }
+
+
+@app.get("/api/campaign-overview")
+def campaign_overview(
+    token: str = Query(...),
+    campaign_id: str = Query(...),
+    since: str = Query(...),
+    until: str = Query(...),
+):
+    """Visão geral da campanha: objetivo, status, orçamento, público configurado
+    e totais de desempenho no período. Escopo travado na conta do token."""
+    _require_campaign(token, campaign_id)
+    camp = _api_get(f"{BASE_URL}/{campaign_id}", {
+        "fields": "name,objective,status,effective_status,daily_budget,lifetime_budget",
+    })
+    ad = _api_get(f"{BASE_URL}/{campaign_id}/adsets", {
+        "fields": "name,status,daily_budget,lifetime_budget,optimization_goal,targeting",
+        "limit": 100,
+    })
+    adsets = [a for a in _paginate(ad) if a.get("status") not in ("DELETED", "ARCHIVED")]
+    targeting = _summarize_targeting(adsets)
+    adsets_daily = sum(_budget_reais(a.get("daily_budget")) or 0 for a in adsets)
+    adsets_lifetime = sum(_budget_reais(a.get("lifetime_budget")) or 0 for a in adsets)
+    ins = _api_get(f"{BASE_URL}/{campaign_id}/insights", {
+        "fields": INSIGHT_FIELDS,
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
+    })
+    rows = ins.get("data", [])
+    totals = _process_row(rows[0]) if rows else {}
+    return {
+        "campaign": {
+            "id": campaign_id,
+            "name": camp.get("name", ""),
+            "objective": camp.get("objective", ""),
+            "objective_group": OBJECTIVE_MAP.get(camp.get("objective", ""), "other"),
+            "status": camp.get("status", ""),
+            "effective_status": camp.get("effective_status", camp.get("status", "")),
+        },
+        "budget": {
+            "campaign_daily": _budget_reais(camp.get("daily_budget")),
+            "campaign_lifetime": _budget_reais(camp.get("lifetime_budget")),
+            "adsets_daily": adsets_daily or None,
+            "adsets_lifetime": adsets_lifetime or None,
+        },
+        "targeting": targeting,
+        "totals": totals,
+    }
+
+
+@app.get("/api/campaign-breakdown")
+def campaign_breakdown(
+    token: str = Query(...),
+    campaign_id: str = Query(...),
+    dim: str = Query(...),
+    since: str = Query(...),
+    until: str = Query(...),
+):
+    """Insights da campanha segmentados por uma dimensão demográfica/técnica:
+    age_gender | region | device | platform. Escopo travado na conta do token."""
+    if dim not in BREAKDOWN_MAP:
+        raise HTTPException(status_code=400, detail="Dimensão inválida.")
+    _require_campaign(token, campaign_id)
+    data = _api_get(f"{BASE_URL}/{campaign_id}/insights", {
+        "fields": "impressions,clicks,spend,ctr,cpc,cpm,reach,actions",
+        "breakdowns": BREAKDOWN_MAP[dim],
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
+        "limit": 500,
+    })
+    rows = []
+    for r in _paginate(data):
+        actions = {a["action_type"]: float(a["value"]) for a in r.get("actions", [])}
+        leads = actions.get("lead", 0) or actions.get("onsite_conversion.lead_grouped", 0)
+        row = {
+            "impressions": int(r.get("impressions", 0)),
+            "clicks": int(r.get("clicks", 0)),
+            "spend": float(r.get("spend", 0)),
+            "ctr": float(r.get("ctr", 0)),
+            "cpc": float(r.get("cpc") or 0),
+            "cpm": float(r.get("cpm", 0)),
+            "leads": leads,
+        }
+        if dim == "age_gender":
+            row["age"] = r.get("age", "")
+            row["gender"] = GENDER_MAP.get(str(r.get("gender")), r.get("gender", ""))
+        elif dim == "region":
+            row["region"] = r.get("region", "")
+        elif dim == "device":
+            row["device"] = r.get("impression_device", "")
+        elif dim == "platform":
+            row["platform"] = r.get("publisher_platform", "")
+        rows.append(row)
+    rows.sort(key=lambda x: x["impressions"], reverse=True)
+    return {"dim": dim, "rows": rows}
+
+
 @app.get("/api/adsets")
 def get_adsets(token: str = Query(...)):
     """Returns adsets list for the account."""
