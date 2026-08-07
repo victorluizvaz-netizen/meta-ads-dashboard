@@ -442,6 +442,64 @@ def campaign_breakdown(
     return {"dim": dim, "rows": rows}
 
 
+@app.get("/api/leads")
+def campaign_leads(
+    token: str = Query(...),
+    campaign_id: str = Query(...),
+    since: str = Query(None),
+):
+    """Leads individuais (nome/telefone/e-mail + respostas do formulário) das ads
+    da campanha. Escopo travado na conta do token (mesma trava anti-IDOR de
+    campaign-overview/campaign-breakdown, via _require_campaign).
+
+    A API de leads do Meta funciona por AD, não por campanha direto — busca todas
+    as ads da campanha e agrega o edge /leads de cada uma. Exige a permissão
+    leads_retrieval (+ ads_read) no token de acesso (META_ACCESS_TOKEN); sem ela,
+    toda ad falha e o erro real do Meta é propagado (não vira lista vazia sem
+    explicação — importante pra diagnosticar a falta da permissão)."""
+    _require_campaign(token, campaign_id)
+    ads_data = _api_get(f"{BASE_URL}/{campaign_id}/ads", {"fields": "id", "limit": 200})
+    ad_ids = [a["id"] for a in _paginate(ads_data)]
+
+    since_dt = None
+    if since:
+        try:
+            # 'since' vem naive (hora de Brasília) do lado do Pulso; created_time do
+            # Meta vem em UTC — comparação aproximada (~3h de folga), suficiente pra
+            # limitar o tamanho da resposta. O dedupe de verdade é por lead, no Pulso.
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            since_dt = None
+
+    leads: list[dict] = []
+    any_success = False
+    last_error: HTTPException | None = None
+    for ad_id in ad_ids:
+        try:
+            data = _api_get(f"{BASE_URL}/{ad_id}/leads", {"fields": "id,created_time,field_data", "limit": 200})
+            any_success = True
+        except HTTPException as e:
+            last_error = e
+            continue  # ad sem formulário de lead vinculado costuma dar erro aqui — ignora e segue
+        for lead in _paginate(data):
+            if since_dt:
+                try:
+                    created = datetime.strptime(lead["created_time"], "%Y-%m-%dT%H:%M:%S%z").replace(tzinfo=None)
+                    if created < since_dt:
+                        continue
+                except (KeyError, ValueError):
+                    pass
+            leads.append(lead)
+
+    # Só propaga o erro se NENHUMA ad respondeu (ex.: permissão leads_retrieval
+    # ausente) — se algumas ads não tinham formulário de lead, isso é normal.
+    if ad_ids and not any_success and last_error is not None:
+        raise last_error
+
+    leads.sort(key=lambda l: l.get("created_time", ""), reverse=True)
+    return {"leads": leads}
+
+
 @app.get("/api/adsets")
 def get_adsets(token: str = Query(...)):
     """Returns adsets list for the account."""
