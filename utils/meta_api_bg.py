@@ -149,6 +149,17 @@ def get_campaigns_bg(account_id: str) -> list:
     return [c for c in _paginate(data) if c.get("status") not in ("DELETED", "ARCHIVED")]
 
 
+def get_account_balance_bg(account_id: str) -> dict:
+    """Dados de saldo/limite de gasto do objeto da conta (act_<id>).
+    balance = valor da fatura em aberto (NÃO é 'crédito disponível' em contas
+    pós-pagas — é quanto já foi consumido e será cobrado no próximo ciclo).
+    spend_cap/amount_spent = limite de gasto configurado na conta e quanto já
+    foi consumido dele (0 = sem limite configurado)."""
+    return _api_get(f"{BASE_URL}/{account_id}", {
+        "fields": "name,currency,balance,spend_cap,amount_spent,account_status",
+    })
+
+
 def get_insights_for_report(account_id: str, since: str, until: str):
     """Insights completos para geração de relatório (nível campanha, granularidade diária)."""
     import pandas as pd

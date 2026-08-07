@@ -281,6 +281,61 @@ def check_budget_pace(history: dict, today_str: str, campaigns_budget: list) -> 
         return []
 
 
+# account_status da Graph API que indicam risco de pagamento/conta travada:
+# 2=Disabled, 3=Unsettled, 9=In Grace Period, 100=Pending Closure
+_RISCO_PAGAMENTO = {2, 3, 9, 100}
+
+
+def check_saldo(account_id: str, label: str, info: dict, account_cfg: dict) -> list:
+    """
+    Verifica saldo baixo / limite de gasto próximo do fim + status de pagamento
+    da conta. 'balance' da Graph API é o valor da FATURA em aberto (contas
+    pós-pagas), não crédito disponível — por isso o cálculo de 'disponível'
+    muda conforme account_cfg['prepago'] (marcado manualmente por conta, já
+    que não há campo confiável da API para detectar isso automaticamente).
+
+    account_cfg é o dict da conta em config_alertas.json (tem 'prepago' e
+    'thresholds.saldo_minimo', ambos opcionais — sem eles, a checagem de saldo
+    fica desligada pra essa conta, só o status de pagamento continua ativo).
+    """
+    alerts = []
+    status = info.get("account_status")
+    if status in _RISCO_PAGAMENTO:
+        alerts.append({
+            "key": f"{account_id}_status_pagamento",
+            "msg": (
+                f"🚨 *Problema de pagamento*\n"
+                f"Conta: {label}\n"
+                f"Status: {status} — verifique o método de pagamento no Ads Manager."
+            ),
+        })
+
+    saldo_minimo = (account_cfg.get("thresholds") or {}).get("saldo_minimo")
+    prepago = account_cfg.get("prepago")
+    if saldo_minimo is None or prepago is None:
+        return alerts  # checagem de saldo desligada pra essa conta (não configurada)
+
+    moeda = info.get("currency", "BRL")
+    if prepago:
+        disponivel = (info.get("balance") or 0) / 100.0
+    else:
+        cap = info.get("spend_cap") or 0
+        if cap <= 0:
+            return alerts  # pós-pago sem limite de gasto configurado: nada a comparar
+        disponivel = cap / 100.0 - (info.get("amount_spent") or 0) / 100.0
+
+    if disponivel < saldo_minimo:
+        alerts.append({
+            "key": f"{account_id}_saldo_baixo",
+            "msg": (
+                f"💰 *Saldo baixo*\n"
+                f"Conta: {label}\n"
+                f"Disponível: {moeda} {disponivel:.2f} (mínimo configurado: {moeda} {saldo_minimo:.2f})"
+            ),
+        })
+    return alerts
+
+
 def build_snapshot(current: list) -> dict:
     """Gera snapshot dos contadores atuais para comparação no próximo ciclo."""
     return {

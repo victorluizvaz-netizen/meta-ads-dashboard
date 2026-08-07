@@ -22,11 +22,13 @@
         "120363XXXXXXXXXXXXXXXXXX@g.us"
       ],
       "exclude_campaigns": [],
+      "prepago": null,
       "thresholds": {
         "budget_warning_pct": 70,
         "ctr_min": 0.5,
         "cpm_max": 50.0,
-        "cpl_max": null
+        "cpl_max": null,
+        "saldo_minimo": null
       }
     }
   ]

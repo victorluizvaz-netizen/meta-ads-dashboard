@@ -43,13 +43,13 @@ _CONFIG = _bootstrap()
 sys.path.insert(0, str(ROOT))
 
 from utils.meta_api_bg import (
-    get_insights_bg, get_campaigns_bg, validate_token,
+    get_insights_bg, get_campaigns_bg, validate_token, get_account_balance_bg,
     get_insights_for_report, get_adset_insights_for_report, get_ad_insights_for_report,
 )
 from utils.whatsapp    import send_message, send_document
 from utils.alert_logic import (
     check_alerts, build_daily_report, build_persistent_summary,
-    check_lead_increment, build_snapshot, check_budget_pace,
+    check_lead_increment, build_snapshot, check_budget_pace, check_saldo,
 )
 from utils.tz import now_br
 
@@ -530,7 +530,16 @@ def main():
         # ── Automação 5: ritmo de gasto vs orçamento ─────────────────────────
         acct_history = log.get("history", {}).get(account_id, {})
         pace_alerts  = check_budget_pace(acct_history, today, campaigns_budget)
-        current_alerts = check_alerts(insights_today, campaigns_budget, thresholds) + pace_alerts
+
+        # ── Automação 7: saldo/limite de gasto da conta + status de pagamento ──
+        try:
+            saldo_info = get_account_balance_bg(account_id)
+            saldo_alerts = check_saldo(account_id, label, saldo_info, account)
+        except Exception as e:
+            print(f"  ERRO saldo: {e}")
+            saldo_alerts = []
+
+        current_alerts = check_alerts(insights_today, campaigns_budget, thresholds) + pace_alerts + saldo_alerts
         current_keys   = {a["key"] for a in current_alerts}
         account_active_keys = {k for k, v in active.items() if v.get("account_id") == account_id}
 
