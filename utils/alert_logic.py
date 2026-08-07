@@ -316,13 +316,16 @@ def check_saldo(account_id: str, label: str, info: dict, account_cfg: dict) -> l
         return alerts  # checagem de saldo desligada pra essa conta (não configurada)
 
     moeda = info.get("currency", "BRL")
+    # balance/spend_cap/amount_spent vêm como STRING na Graph API (confirmado
+    # contra conta real) — sem o int(), a divisão abaixo levanta TypeError e o
+    # alerta nunca dispara (silenciosamente engolido pelo try/except do runner).
     if prepago:
-        disponivel = (info.get("balance") or 0) / 100.0
+        disponivel = int(info.get("balance") or 0) / 100.0
     else:
-        cap = info.get("spend_cap") or 0
+        cap = int(info.get("spend_cap") or 0)
         if cap <= 0:
             return alerts  # pós-pago sem limite de gasto configurado: nada a comparar
-        disponivel = cap / 100.0 - (info.get("amount_spent") or 0) / 100.0
+        disponivel = cap / 100.0 - int(info.get("amount_spent") or 0) / 100.0
 
     if disponivel < saldo_minimo:
         alerts.append({

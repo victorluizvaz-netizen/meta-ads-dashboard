@@ -262,6 +262,56 @@ def get_campaigns(token: str = Query(...)):
     return {"campaigns": campaigns}
 
 
+# ── Config de saldo/cobrança + saldo da conta (client token) ────────────────────
+# Mesmos campos que utils/alert_logic.py::check_saldo já lê de config_alertas.json
+# (rodado por alertas_runner.py) — essas rotas deixam o Pulso editar/ler os MESMOS
+# campos remotamente, sem duplicar o dado em outro lugar.
+
+class AccountConfigBody(BaseModel):
+    prepago: bool | None = None
+    saldo_minimo: float | None = None
+
+
+@app.get("/api/account-config")
+def get_account_config(token: str = Query(...)):
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    return {
+        "prepago": account.get("prepago"),
+        "saldo_minimo": (account.get("thresholds") or {}).get("saldo_minimo"),
+    }
+
+
+@app.post("/api/account-config")
+def save_account_config(body: AccountConfigBody, token: str = Query(...)):
+    """Só altera prepago/saldo_minimo da conta do próprio token — nunca mexe em
+    account_id/client_token/whatsapp/outras contas (por isso o corpo é validado
+    por um BaseModel restrito, não um dict genérico como /admin/config usa)."""
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    cfg = _load_config()
+    for conta in cfg.get("contas", []):
+        if conta.get("client_token") == token:
+            conta["prepago"] = body.prepago
+            conta.setdefault("thresholds", {})["saldo_minimo"] = body.saldo_minimo
+            break
+    from utils.config_loader import save_config
+    save_config(cfg)
+    return {"success": True}
+
+
+@app.get("/api/account-balance")
+def get_account_balance(token: str = Query(...)):
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    return _api_get(f"{BASE_URL}/{account['account_id']}", {
+        "fields": "name,currency,balance,spend_cap,amount_spent,account_status",
+    })
+
+
 # ── Detalhe de campanha (client token) ──────────────────────────────────────────
 GENDER_MAP = {"1": "Masculino", "2": "Feminino", 1: "Masculino", 2: "Feminino",
               "male": "Masculino", "female": "Feminino", "unknown": "Não informado"}
