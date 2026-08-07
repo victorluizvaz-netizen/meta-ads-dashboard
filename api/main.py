@@ -266,9 +266,14 @@ def get_campaigns(token: str = Query(...)):
 # Mesmos campos que utils/alert_logic.py::check_saldo já lê de config_alertas.json
 # (rodado por alertas_runner.py) — essas rotas deixam o Pulso editar/ler os MESMOS
 # campos remotamente, sem duplicar o dado em outro lugar.
+#
+# Sem flag de "prepago/pospago": o "disponível" é sempre spend_cap - amount_spent
+# quando a conta tem spend_cap configurado (é assim que o pré-pago funciona na
+# prática aqui — depósito PIX vira um aumento do spend_cap, não um saldo
+# separado). Uma flag manual pra isso existiu numa versão anterior e causou um
+# alerta errado (usava 'balance', que é fatura em aberto, não saldo) — removida.
 
 class AccountConfigBody(BaseModel):
-    prepago: bool | None = None
     saldo_minimo: float | None = None
 
 
@@ -278,14 +283,13 @@ def get_account_config(token: str = Query(...)):
     if not account:
         raise HTTPException(status_code=401, detail="Token inválido.")
     return {
-        "prepago": account.get("prepago"),
         "saldo_minimo": (account.get("thresholds") or {}).get("saldo_minimo"),
     }
 
 
 @app.post("/api/account-config")
 def save_account_config(body: AccountConfigBody, token: str = Query(...)):
-    """Só altera prepago/saldo_minimo da conta do próprio token — nunca mexe em
+    """Só altera saldo_minimo da conta do próprio token — nunca mexe em
     account_id/client_token/whatsapp/outras contas (por isso o corpo é validado
     por um BaseModel restrito, não um dict genérico como /admin/config usa)."""
     account = _find_account(token)
@@ -294,7 +298,6 @@ def save_account_config(body: AccountConfigBody, token: str = Query(...)):
     cfg = _load_config()
     for conta in cfg.get("contas", []):
         if conta.get("client_token") == token:
-            conta["prepago"] = body.prepago
             conta.setdefault("thresholds", {})["saldo_minimo"] = body.saldo_minimo
             break
     from utils.config_loader import save_config

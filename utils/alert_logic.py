@@ -289,14 +289,21 @@ _RISCO_PAGAMENTO = {2, 3, 9, 100}
 def check_saldo(account_id: str, label: str, info: dict, account_cfg: dict) -> list:
     """
     Verifica saldo baixo / limite de gasto próximo do fim + status de pagamento
-    da conta. 'balance' da Graph API é o valor da FATURA em aberto (contas
-    pós-pagas), não crédito disponível — por isso o cálculo de 'disponível'
-    muda conforme account_cfg['prepago'] (marcado manualmente por conta, já
-    que não há campo confiável da API para detectar isso automaticamente).
+    da conta.
 
-    account_cfg é o dict da conta em config_alertas.json (tem 'prepago' e
-    'thresholds.saldo_minimo', ambos opcionais — sem eles, a checagem de saldo
-    fica desligada pra essa conta, só o status de pagamento continua ativo).
+    'disponível' = spend_cap - amount_spent, sempre que a conta tem um
+    spend_cap configurado (>0) — é assim que o "pré-pago" funciona na prática
+    aqui (depósito PIX vira um AUMENTO do spend_cap na conta, não um saldo
+    separado). Contas sem spend_cap configurado (cobrança automática por
+    cartão) não têm um "saldo" comparável vindo desses campos — 'balance' da
+    Graph API ali é só o valor da fatura em aberto, não crédito disponível, e
+    NÃO deve ser usado como "saldo disponível" (confirmado contra conta real:
+    dava um número ~5x menor que o saldo de verdade mostrado no Ads Manager).
+    Pra essas, só o status de pagamento é monitorado.
+
+    account_cfg é o dict da conta em config_alertas.json (tem
+    'thresholds.saldo_minimo', opcional — sem ele, a checagem de saldo fica
+    desligada pra essa conta, só o status de pagamento continua ativo).
     """
     alerts = []
     status = info.get("account_status")
@@ -311,21 +318,17 @@ def check_saldo(account_id: str, label: str, info: dict, account_cfg: dict) -> l
         })
 
     saldo_minimo = (account_cfg.get("thresholds") or {}).get("saldo_minimo")
-    prepago = account_cfg.get("prepago")
-    if saldo_minimo is None or prepago is None:
+    if saldo_minimo is None:
         return alerts  # checagem de saldo desligada pra essa conta (não configurada)
 
     moeda = info.get("currency", "BRL")
     # balance/spend_cap/amount_spent vêm como STRING na Graph API (confirmado
     # contra conta real) — sem o int(), a divisão abaixo levanta TypeError e o
     # alerta nunca dispara (silenciosamente engolido pelo try/except do runner).
-    if prepago:
-        disponivel = int(info.get("balance") or 0) / 100.0
-    else:
-        cap = int(info.get("spend_cap") or 0)
-        if cap <= 0:
-            return alerts  # pós-pago sem limite de gasto configurado: nada a comparar
-        disponivel = cap / 100.0 - int(info.get("amount_spent") or 0) / 100.0
+    cap = int(info.get("spend_cap") or 0)
+    if cap <= 0:
+        return alerts  # sem spend_cap configurado: nada comparável a "saldo" pra essa conta
+    disponivel = cap / 100.0 - int(info.get("amount_spent") or 0) / 100.0
 
     if disponivel < saldo_minimo:
         alerts.append({
