@@ -553,6 +553,82 @@ def campaign_leads(
     return {"leads": leads}
 
 
+# ── Pixel de conversão (client token) ───────────────────────────────────────────
+# Uma conta pode ter vários pixels (confirmado contra conta real: uma tinha 4,
+# com nomes parecidos) — não existe um jeito de saber automaticamente qual pixel
+# corresponde a qual campanha, então o Pulso deixa o admin escolher manualmente
+# por card (mesmo padrão de meta_campaign_id), usando /api/pixels pra listar as
+# opções com um sinal de qual é o certo (contagem de eventos Lead recentes).
+def _require_pixel(token: str, pixel_id: str) -> dict:
+    """Anti-IDOR: confere que o pixel pedido pertence à conta do token. Não existe
+    um campo direto "esse pixel é dessa conta?" na Graph API — só dá pra conferir
+    listando os pixels da conta e comparando o id (mesma ideia de _require_campaign)."""
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    pixels_data = _api_get(f"{BASE_URL}/{account['account_id']}/adspixels", {"fields": "id"})
+    pixel_ids = {p["id"] for p in _paginate(pixels_data)}
+    if pixel_id not in pixel_ids:
+        raise HTTPException(status_code=403, detail="Pixel não pertence a esta conta.")
+    return account
+
+
+@app.get("/api/pixels")
+def list_pixels(token: str = Query(...)):
+    """Pixels da conta do token, com last_fired_time + volume de eventos Lead dos
+    últimos 7 dias (sinal pra ajudar o admin a diferenciar pixels com nome parecido)."""
+    account = _find_account(token)
+    if not account:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    data = _api_get(f"{BASE_URL}/{account['account_id']}/adspixels", {
+        "fields": "id,name,last_fired_time",
+    })
+    pixels = _paginate(data)
+    now = datetime.utcnow()
+    since = int((now - timedelta(days=7)).timestamp())
+    until = int(now.timestamp())
+    for p in pixels:
+        try:
+            stats = _api_get(f"{BASE_URL}/{p['id']}/stats", {
+                "aggregation": "event", "start_time": since, "end_time": until,
+            })
+            p["lead_count_7d"] = sum(
+                ev.get("count", 0)
+                for bucket in stats.get("data", [])
+                for ev in bucket.get("data", [])
+                if ev.get("value") == "Lead"
+            )
+        except Exception:
+            p["lead_count_7d"] = None
+    return {"pixels": pixels}
+
+
+@app.get("/api/pixel-stats")
+def pixel_stats(token: str = Query(...), pixel_id: str = Query(...), days: int = Query(7)):
+    """Volume de eventos do pixel por tipo, últimos `days` dias — mesma agregação
+    que o Gerenciador de Eventos do Meta mostra."""
+    _require_pixel(token, pixel_id)
+    info = _api_get(f"{BASE_URL}/{pixel_id}", {"fields": "id,name,last_fired_time"})
+    now = datetime.utcnow()
+    since = int((now - timedelta(days=days)).timestamp())
+    until = int(now.timestamp())
+    stats = _api_get(f"{BASE_URL}/{pixel_id}/stats", {
+        "aggregation": "event", "start_time": since, "end_time": until,
+    })
+    totals: dict[str, int] = {}
+    for bucket in stats.get("data", []):
+        for ev in bucket.get("data", []):
+            name = ev.get("value") or "Desconhecido"
+            totals[name] = totals.get(name, 0) + ev.get("count", 0)
+    events = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
+    return {
+        "id": info.get("id"),
+        "name": info.get("name"),
+        "last_fired_time": info.get("last_fired_time"),
+        "events": [{"name": n, "count": c} for n, c in events],
+    }
+
+
 @app.get("/api/adsets")
 def get_adsets(token: str = Query(...)):
     """Returns adsets list for the account."""
