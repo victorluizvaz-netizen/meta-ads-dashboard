@@ -606,7 +606,12 @@ def list_pixels(token: str = Query(...)):
 @app.get("/api/pixel-stats")
 def pixel_stats(token: str = Query(...), pixel_id: str = Query(...), days: int = Query(7)):
     """Volume de eventos do pixel por tipo, últimos `days` dias — mesma agregação
-    que o Gerenciador de Eventos do Meta mostra."""
+    que o Gerenciador de Eventos do Meta mostra.
+
+    `buckets` (por hora, cru) vem junto pra quem precisa detectar "evento novo desde
+    a última checagem" (ex.: alerta de Purchase no alert_engine.py do Pulso) — a API
+    de pixel não dá id individual por evento, só contagem agregada por hora, então é
+    o granular máximo disponível pra dedupe."""
     _require_pixel(token, pixel_id)
     info = _api_get(f"{BASE_URL}/{pixel_id}", {"fields": "id,name,last_fired_time"})
     now = datetime.utcnow()
@@ -616,16 +621,21 @@ def pixel_stats(token: str = Query(...), pixel_id: str = Query(...), days: int =
         "aggregation": "event", "start_time": since, "end_time": until,
     })
     totals: dict[str, int] = {}
+    buckets = []
     for bucket in stats.get("data", []):
+        bucket_events = {}
         for ev in bucket.get("data", []):
             name = ev.get("value") or "Desconhecido"
             totals[name] = totals.get(name, 0) + ev.get("count", 0)
+            bucket_events[name] = bucket_events.get(name, 0) + ev.get("count", 0)
+        buckets.append({"start_time": bucket.get("start_time"), "events": bucket_events})
     events = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     return {
         "id": info.get("id"),
         "name": info.get("name"),
         "last_fired_time": info.get("last_fired_time"),
         "events": [{"name": n, "count": c} for n, c in events],
+        "buckets": buckets,
     }
 
 
