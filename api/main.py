@@ -133,8 +133,12 @@ def _process_row(r: dict) -> dict:
     values  = {a["action_type"]: float(a["value"]) for a in r.get("action_values", [])}
 
     leads = actions.get("lead", 0) or actions.get("onsite_conversion.lead_grouped", 0)
-    purchases = actions.get("purchase", 0) + actions.get("offsite_conversion.fb_pixel_purchase", 0)
-    rev = values.get("purchase", 0) + values.get("offsite_conversion.fb_pixel_purchase", 0)
+    # "purchase" já é o total oficial deduplicado do Meta; "offsite_conversion.fb_pixel_purchase"
+    # é a MESMA compra vista pelo pixel, não uma fonte adicional — somar os dois dobra a contagem
+    # e a receita (confirmado contra campanha real: purchase=2/R$1699,22 igual a
+    # offsite_conversion.fb_pixel_purchase=2/R$1699,22, mesmas 2 compras contadas 2x).
+    purchases = actions.get("purchase", 0) or actions.get("offsite_conversion.fb_pixel_purchase", 0)
+    rev = values.get("purchase", 0) or values.get("offsite_conversion.fb_pixel_purchase", 0)
     spend = float(r.get("spend", 0))
     conversations = (
         actions.get("onsite_conversion.messaging_conversation_started_7d", 0)
