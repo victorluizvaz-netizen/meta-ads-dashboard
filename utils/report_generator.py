@@ -286,6 +286,59 @@ def _agg_ads(df_ads):
     return df, top_ctr, top_spend, base_cols
 
 
+def _creative_gallery_html(df):
+    """Prévia visual dos anúncios (thumbnail + link de preview + link da Biblioteca de
+    Anúncios da página). thumbnail_url/preview_link/library_link vêm de get_ad_creatives_bg
+    (utils/meta_api_bg.py) — nem toda ad tem os três preenchidos (ex: ads antigas/pausadas)."""
+    if df is None or df.empty or "thumbnail_url" not in df.columns:
+        return ""
+    cards = []
+    for _, row in df.head(10).iterrows():
+        thumb = row.get("thumbnail_url")
+        img_html = (f'<img src="{thumb}" style="width:100%;height:110px;object-fit:cover;display:block;">'
+                    if thumb else '<div style="width:100%;height:110px;background:#F0F2F5;"></div>')
+        name = str(row.get("ad_name") or "")
+        links = []
+        if row.get("preview_link"):
+            links.append(f'<a href="{row["preview_link"]}" target="_blank" rel="noopener" style="font-size:0.68rem;color:#1877F2;text-decoration:none;">Preview</a>')
+        if row.get("library_link"):
+            links.append(f'<a href="{row["library_link"]}" target="_blank" rel="noopener" style="font-size:0.68rem;color:#1877F2;text-decoration:none;">Biblioteca</a>')
+        links_html = '<span style="color:#D1D5DB;"> &middot; </span>'.join(links) or '<span style="font-size:0.65rem;color:#95A5A6;">Sem link disponível</span>'
+        cards.append(
+            f'<div style="width:150px;background:white;border:1px solid #E4E6EB;border-radius:10px;overflow:hidden;">'
+            f'{img_html}'
+            f'<div style="padding:0.5rem;">'
+            f'<p style="font-size:0.72rem;font-weight:600;color:#1C1E21;margin:0 0 0.35rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{name}">{name}</p>'
+            f'<div>{links_html}</div>'
+            f'</div></div>'
+        )
+    return f'<div style="display:flex;flex-wrap:wrap;gap:0.7rem;margin:0.7rem 0 1.1rem;">{"".join(cards)}</div>'
+
+
+def _creative_gallery_pdf(df, cols=5):
+    """Mesma prévia de _creative_gallery_html, em tabela (xhtml2pdf não suporta flexbox)."""
+    if df is None or df.empty or "thumbnail_url" not in df.columns:
+        return ""
+    cells = []
+    for _, row in df.head(10).iterrows():
+        thumb = row.get("thumbnail_url")
+        img_html = f'<img src="{thumb}" width="90" height="90"/>' if thumb else ""
+        name = str(row.get("ad_name") or "")
+        name = (name[:28] + "…") if len(name) > 28 else name
+        links = []
+        if row.get("preview_link"):
+            links.append(f'<a href="{row["preview_link"]}"><font color="#1877F2" size="1">Preview</font></a>')
+        if row.get("library_link"):
+            links.append(f'<a href="{row["library_link"]}"><font color="#1877F2" size="1">Biblioteca</font></a>')
+        links_html = " &middot; ".join(links) or '<font color="#95A5A6" size="1">Sem link</font>'
+        cells.append(
+            f'<td width="20%" style="padding:4pt;text-align:center;vertical-align:top;">'
+            f'{img_html}<br/><font size="1" color="#1C1E21"><b>{name}</b></font><br/>{links_html}</td>'
+        )
+    rows_html = "".join(f'<tr>{"".join(cells[i:i + cols])}</tr>' for i in range(0, len(cells), cols))
+    return f'<table width="100%" cellspacing="4" cellpadding="0" style="margin:6pt 0 10pt;">{rows_html}</table>'
+
+
 def _agg_adsets(df_adsets):
     if df_adsets is None or df_adsets.empty:
         return None, []
@@ -731,6 +784,7 @@ def _html_body(df, df_prev, sections, notes, chart_fn, df_adsets=None, df_ads=No
         if result[0] is not None:
             _, top_ctr, top_spend, base_cols = result
             body += _section("Criativos — Análise por Anúncio")
+            body += _creative_gallery_html(top_spend)
             _cr_layout = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5", automargin=True)}
 
             if not top_spend.empty:
@@ -929,6 +983,7 @@ def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None, adsets_
         if result[0] is not None:
             _, top_ctr, top_spend, base_cols = result
             body += _section_pdf("Criativos — Análise por Anúncio")
+            body += _creative_gallery_pdf(top_spend)
             _cr_layout_pdf = {**BASE_LAYOUT, "yaxis": dict(autorange="reversed", gridcolor="#F0F2F5", automargin=True)}
 
             if not top_spend.empty:

@@ -197,6 +197,31 @@ def get_ad_insights_for_report(account_id: str, since: str, until: str):
     return _process_ad_full(_paginate(data))
 
 
+CREATIVE_FIELDS = "creative{thumbnail_url,image_url,object_story_spec,effective_object_story_id},preview_shareable_link"
+
+
+def get_ad_creatives_bg(ad_ids: list) -> dict:
+    """Busca thumbnail + link de preview por ad_id, em lote (endpoint /?ids=..., até 50 por vez).
+    page_id sai do prefixo de effective_object_story_id (formato '{page_id}_{post_id}') — usado
+    pra montar o link público da Biblioteca de Anúncios da página (não existe campo direto que
+    ligue um ad_id da Marketing API ao "Library ID" da Biblioteca pública — são IDs diferentes)."""
+    result = {}
+    for i in range(0, len(ad_ids), 50):
+        chunk = [a for a in ad_ids[i:i + 50] if a]
+        if not chunk:
+            continue
+        data = _api_get(f"{BASE_URL}/", {"ids": ",".join(chunk), "fields": CREATIVE_FIELDS})
+        for ad_id, obj in data.items():
+            creative = obj.get("creative") or {}
+            story_id = creative.get("effective_object_story_id") or ""
+            result[ad_id] = {
+                "thumbnail_url": creative.get("thumbnail_url") or creative.get("image_url"),
+                "preview_shareable_link": obj.get("preview_shareable_link"),
+                "page_id": story_id.split("_")[0] if "_" in story_id else None,
+            }
+    return result
+
+
 def _process_full(raw: list):
     import pandas as pd
     if not raw:

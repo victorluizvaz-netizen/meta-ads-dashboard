@@ -23,7 +23,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 load_dotenv(ROOT / ".env")
@@ -497,6 +497,74 @@ def campaign_breakdown(
         rows.append(row)
     rows.sort(key=lambda x: x["impressions"], reverse=True)
     return {"dim": dim, "rows": rows}
+
+
+_REPORT_SECTIONS_BY_TYPE = {
+    "awareness":   ["Awareness"],
+    "traffic":     ["Tráfego"],
+    "leads":       ["Leads"],
+    "conversions": ["Conversões"],
+}
+
+
+@app.get("/api/campaign-report")
+def campaign_report(
+    token: str = Query(...),
+    campaign_id: str = Query(...),
+    since: str = Query(...),
+    until: str = Query(...),
+    format: str = Query("pdf"),
+):
+    """Relatório de UMA campanha (PDF ou HTML), com seções adaptadas ao objetivo
+    dela (ex: campanha de awareness não leva seção de Leads/Conversões). Reaproveita
+    o gerador de relatório do admin (utils/report_generator.py) e os fetchers
+    Streamlit-free de utils/meta_api_bg.py — nenhuma lógica de cálculo duplicada.
+    Escopo travado na conta do token via _require_campaign (anti-IDOR)."""
+    import pandas as pd
+    from utils.meta_api_bg import (
+        get_insights_for_report, get_adset_insights_for_report,
+        get_ad_insights_for_report, get_ad_creatives_bg,
+    )
+    from utils.report_generator import generate_pdf_report, generate_report
+
+    account = _require_campaign(token, campaign_id)
+    account_id = account["account_id"]
+
+    df = get_insights_for_report(account_id, since, until)
+    df = df[df["campaign_id"] == campaign_id] if not df.empty else df
+    if df.empty:
+        raise HTTPException(status_code=404, detail="Sem dados para essa campanha no período.")
+    df_prev = pd.DataFrame()
+
+    df_adsets = get_adset_insights_for_report(account_id, since, until)
+    df_adsets = df_adsets[df_adsets["campaign_id"] == campaign_id] if not df_adsets.empty else df_adsets
+
+    df_ads = get_ad_insights_for_report(account_id, since, until)
+    df_ads = df_ads[df_ads["campaign_id"] == campaign_id] if not df_ads.empty else df_ads
+    if not df_ads.empty:
+        creatives = get_ad_creatives_bg(df_ads["ad_id"].dropna().unique().tolist())
+        df_ads["thumbnail_url"] = df_ads["ad_id"].map(lambda i: creatives.get(i, {}).get("thumbnail_url"))
+        df_ads["preview_link"] = df_ads["ad_id"].map(lambda i: creatives.get(i, {}).get("preview_shareable_link"))
+        df_ads["library_link"] = df_ads["ad_id"].map(
+            lambda i: (
+                f"https://www.facebook.com/ads/library/?view_all_page_id={creatives.get(i, {}).get('page_id')}"
+                if creatives.get(i, {}).get("page_id") else None
+            )
+        )
+
+    campaign_type = df["campaign_type"].iloc[0]
+    sections = ["Visão Geral"] + _REPORT_SECTIONS_BY_TYPE.get(campaign_type, []) + ["Conjuntos de Anúncios", "Criativos"]
+    client_name = account.get("name") or "Cliente"
+
+    if format == "html":
+        html = generate_report(df, df_prev, client_name, since, until, sections,
+                                df_adsets=df_adsets, df_ads=df_ads)
+        return HTMLResponse(html)
+
+    pdf_bytes = generate_pdf_report(df, df_prev, client_name, since, until, sections,
+                                     df_adsets=df_adsets, df_ads=df_ads)
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                     headers={"Content-Disposition": 'attachment; filename="relatorio.pdf"'})
 
 
 @app.get("/api/leads")
