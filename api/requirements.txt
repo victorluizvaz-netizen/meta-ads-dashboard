@@ -2,3 +2,9 @@ fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
 requests>=2.31.0
 python-dotenv>=1.0.0
+
+# usadas só por /api/campaign-report (geração de relatório de campanha única,
+# reaproveita utils/meta_api_bg.py + utils/report_generator.py do lado Streamlit)
+pandas==2.2.2
+plotly==5.22.0
+weasyprint>=60.0
