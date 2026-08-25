@@ -315,25 +315,37 @@ def _creative_gallery_html(df):
     return f'<div style="display:flex;flex-wrap:wrap;gap:0.7rem;margin:0.7rem 0 1.1rem;">{"".join(cards)}</div>'
 
 
-def _creative_gallery_pdf(df, cols=5):
-    """Mesma prévia de _creative_gallery_html, em tabela (xhtml2pdf não suporta flexbox)."""
+def _creative_gallery_pdf(df, cols=4):
+    """Mesma prévia de _creative_gallery_html, em tabela (xhtml2pdf não suporta flexbox).
+    Cartão com borda/fundo branco igual ao resto do relatório (_card_pdf) — sem isso a
+    galeria destoava visualmente das outras seções (imagem soltando direto na página)."""
     if df is None or df.empty or "thumbnail_url" not in df.columns:
         return ""
     cells = []
     for _, row in df.head(10).iterrows():
         thumb = row.get("thumbnail_url")
-        img_html = f'<img src="{thumb}" width="90" height="90"/>' if thumb else ""
+        img_html = (
+            f'<img src="{thumb}" width="110" height="110" style="border-radius:4pt;"/>' if thumb
+            else '<table width="110" cellpadding="0" cellspacing="0"><tr><td height="110" '
+                 'style="background-color:#F0F2F5;border-radius:4pt;">&nbsp;</td></tr></table>'
+        )
         name = str(row.get("ad_name") or "")
-        name = (name[:28] + "…") if len(name) > 28 else name
+        name = (name[:24] + "…") if len(name) > 24 else name
         links = []
         if row.get("preview_link"):
-            links.append(f'<a href="{row["preview_link"]}"><font color="#1877F2" size="1">Preview</font></a>')
+            links.append(f'<a href="{row["preview_link"]}" style="text-decoration:none;"><font color="#1877F2" size="1">Preview</font></a>')
         if row.get("library_link"):
-            links.append(f'<a href="{row["library_link"]}"><font color="#1877F2" size="1">Biblioteca</font></a>')
-        links_html = " &middot; ".join(links) or '<font color="#95A5A6" size="1">Sem link</font>'
+            links.append(f'<a href="{row["library_link"]}" style="text-decoration:none;"><font color="#1877F2" size="1">Biblioteca</font></a>')
+        links_html = ' <font color="#D1D5DB" size="1">&middot;</font> '.join(links) or '<font color="#95A5A6" size="1">Sem link disponível</font>'
         cells.append(
-            f'<td width="20%" style="padding:4pt;text-align:center;vertical-align:top;">'
-            f'{img_html}<br/><font size="1" color="#1C1E21"><b>{name}</b></font><br/>{links_html}</td>'
+            f'<td width="{100 // cols}%" style="padding:5pt;vertical-align:top;">'
+            f'<table width="100%" cellpadding="0" cellspacing="0" style="background-color:white;'
+            f'border:0.5pt solid #E4E6EB;border-radius:4pt;">'
+            f'<tr><td style="padding:10pt;text-align:center;">'
+            f'{img_html}<br/><br/>'
+            f'<font size="1" color="#1C1E21"><b>{name}</b></font><br/><br/>'
+            f'{links_html}'
+            f'</td></tr></table></td>'
         )
     rows_html = "".join(f'<tr>{"".join(cells[i:i + cols])}</tr>' for i in range(0, len(cells), cols))
     return f'<table width="100%" cellspacing="4" cellpadding="0" style="margin:6pt 0 10pt;">{rows_html}</table>'
