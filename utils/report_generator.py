@@ -340,7 +340,8 @@ def _creative_gallery_pdf(df, cols=4):
         cells.append(
             f'<td width="{100 // cols}%" style="padding:5pt;vertical-align:top;">'
             f'<table width="100%" cellpadding="0" cellspacing="0" style="background-color:white;'
-            f'border:0.5pt solid #E4E6EB;border-radius:4pt;">'
+            f'border:0.5pt solid #E4E6EB;border-radius:4pt;'
+            f'page-break-inside:avoid;break-inside:avoid;">'
             f'<tr><td style="padding:10pt;text-align:center;">'
             f'{img_html}<br/><br/>'
             f'<font size="1" color="#1C1E21"><b>{name}</b></font><br/><br/>'
@@ -450,15 +451,26 @@ def _card_pdf(label, value, delta_str=None, is_positive=None):
         arrow = "▲" if is_positive else "▼"
         delta_html = f'<br/><font size="1" color="{color}"><b>{arrow} {delta_str} vs anterior</b></font>'
     return (
-        f'<td style="background-color:white;border:1pt solid #E4E6EB;padding:8pt 10pt;border-radius:4pt;">'
+        f'<div style="background-color:white;border:1pt solid #E4E6EB;padding:8pt 10pt;border-radius:4pt;">'
         f'<font size="1" color="#65676B"><b>{label.upper()}</b></font><br/>'
-        f'<font size="3" color="#1C1E21"><b>{value}</b></font>{delta_html}</td>'
+        f'<font size="3" color="#1C1E21"><b>{value}</b></font>{delta_html}</div>'
     )
 
 
 def _row_pdf(card_tuples):
-    cells = "".join(_card_pdf(*t) for t in card_tuples)
-    return f'<table width="100%" cellspacing="5" cellpadding="0" style="margin:8pt 0;"><tr>{cells}</tr></table>'
+    """Flexbox, não tabela — testado direto contra o weasyprint real (mesmo motor
+    do Railway): table-layout:fixed com <col width="%"> (o mesmo padrão que
+    _campaign_table_pdf usa com sucesso pras tabelas) é ignorado aqui — a coluna
+    cresce pro tamanho do conteúdo de qualquer jeito quando tem muitos cards numa
+    linha só (ex: Conversões com "Conversas Iniciadas"/"Custo por Conversa"
+    somados aos 5 já fixos vira 7), estourando a página. Flexbox com flex-wrap
+    deixa os cards quebrarem pra uma segunda linha em vez de estourar — mesmo
+    padrão já usado e comprovado na versão HTML (_row/_card)."""
+    cols = "".join(
+        f'<div style="flex:1 1 110pt;min-width:110pt;margin:2.5pt;">{_card_pdf(*t)}</div>'
+        for t in card_tuples
+    )
+    return f'<div style="display:flex;flex-wrap:wrap;margin:8pt 0;">{cols}</div>'
 
 
 def _section_pdf(title):
