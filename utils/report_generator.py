@@ -1,4 +1,5 @@
 import base64
+import math
 from io import BytesIO
 import pandas as pd
 import plotly.graph_objects as go
@@ -14,6 +15,20 @@ PURPLE = "#9B59B6"
 RED    = "#E74C3C"
 GRAY   = "#95A5A6"
 PALETTE = [BLUE, GREEN, ORANGE, PURPLE, RED, GRAY]
+
+# Paleta do relatório de CAMPANHA ÚNICA (utils/report_generator.py:generate_campaign_report_pdf,
+# usada só por api/main.py:/api/campaign-report) — cores do Pulso, tema "Warp"
+# (confirmadas em trello-clone/app/templates/base.html: prismic-violet/muted-cobalt e
+# prismic-green/gold-leaf). O relatório de CONTA INTEIRA do Streamlit (generate_pdf_report,
+# acima) mantém a paleta azul original — ninguém pediu pra mudar aquele, e são consumidores
+# diferentes (agência olhando a conta toda vs. o botão do card de campanha no Pulso).
+PULSO_BLUE    = "#6f839f"
+PULSO_GOLD    = "#bd9f65"
+PULSO_GREEN   = "#27AE60"
+PULSO_RED     = "#e0736a"
+PULSO_CAUTION = "#c98a4b"
+PULSO_GRAY    = "#95A5A6"
+PULSO_DONUT_COLORS = [PULSO_BLUE, PULSO_GOLD, PULSO_GREEN, PULSO_CAUTION, PULSO_RED, PULSO_GRAY]
 
 BASE_LAYOUT = dict(
     plot_bgcolor="white", paper_bgcolor="white",
@@ -482,9 +497,22 @@ def _section_pdf(title):
 
 # ── Template wrapper ───────────────────────────────────────────────────────────
 
-def _wrap(body, client_name, since, until, for_pdf=False):
+def _wrap(body, client_name, since, until, for_pdf=False, cover=""):
+    """cover: HTML de uma capa full-bleed (page-break-after:always), inserida ANTES
+    do .wrapper com margem — só usada por generate_campaign_report_pdf. Quando
+    presente, substitui o .header azul (a capa já mostra cliente/campanha/período)
+    e a primeira página ganha margem zero (@page :first) pra capa ir até a borda.
+    Parâmetro opcional com default "" — não muda nada pros callers existentes
+    (generate_report/generate_pdf_report, relatório de conta inteira do Streamlit)."""
     font_import = "" if for_pdf else '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">'
     font_family = "Arial, sans-serif" if for_pdf else "'Inter', sans-serif"
+    page_rules = '@page { margin: 1.5cm; size: A4; }' if for_pdf else ''
+    if for_pdf and cover:
+        page_rules += ' @page :first { margin: 0; }'
+    header_html = "" if (for_pdf and cover) else f'''<div class="header">
+    <h1>Relatório Meta Ads</h1>
+    <p>Cliente: <b>{client_name}</b> &nbsp;|&nbsp; Período: <b>{since} → {until}</b></p>
+  </div>'''
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -501,15 +529,13 @@ def _wrap(body, client_name, since, until, for_pdf=False):
   .header p  {{ font-size:{'9pt' if for_pdf else '0.9rem'}; opacity:0.9; }}
   .footer {{ text-align:center; color:#95A5A6; font-size:{'7pt' if for_pdf else '0.75rem'};
              margin-top:{'1cm' if for_pdf else '3rem'}; padding-top:8pt; border-top:1pt solid #E4E6EB; }}
-  {'@page { margin: 1.5cm; size: A4; }' if for_pdf else ''}
+  {page_rules}
 </style>
 </head>
 <body>
+{cover}
 <div class="wrapper">
-  <div class="header">
-    <h1>Relatório Meta Ads</h1>
-    <p>Cliente: <b>{client_name}</b> &nbsp;|&nbsp; Período: <b>{since} → {until}</b></p>
-  </div>
+  {header_html}
   {body}
   <div class="footer">Gerado automaticamente via Meta Ads Dashboard</div>
 </div>
@@ -1039,6 +1065,356 @@ def _pdf_body(df, df_prev, sections, notes, df_adsets=None, df_ads=None, adsets_
         body += f'<p style="font-size:9pt;line-height:1.6;">{notes}</p>'
 
     return body
+
+
+# ── Relatório de campanha única (Pulso) — gráficos em SVG, sem Plotly/kaleido ──
+#
+# Caminho dedicado pro botão "Relatório da campanha" do Pulso (api/main.py:
+# /api/campaign-report). Não usa go.Figure/_fig_png porque isso depende de
+# kaleido, que nunca foi instalado na imagem da API no Railway — todo gráfico
+# saía como "[Gráfico não disponível neste ambiente]" (confirmado gerando PDF
+# real). Em vez de adicionar kaleido (pesado, e o pin do plotly==5.22.0 já está
+# desalinhado até do lado Streamlit), os gráficos aqui são SVG puro, desenhado
+# à mão — sem dependência externa, renderiza direto no weasyprint.
+
+def _svg_line_chart(dates, series, width=520, height=200):
+    """series: [(label, values, color) ou (label, values, color, 'dash'), ...].
+    Preenche a área embaixo da primeira série (mesmo efeito visual do gráfico
+    de investimento/receita atual)."""
+    pad_l, pad_r, pad_t, pad_b = 4, 4, 6, 4
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    n = len(dates)
+    all_vals = [v for _, vals, *_ in series for v in vals] or [0]
+    vmax = (max(all_vals) or 1) * 1.15
+
+    def xy(i, v):
+        x = pad_l + (i / max(n - 1, 1)) * plot_w
+        y = pad_t + plot_h - (v / vmax) * plot_h
+        return x, y
+
+    parts = [f'<line x1="{pad_l}" y1="{pad_t + plot_h:.1f}" x2="{width - pad_r}" y2="{pad_t + plot_h:.1f}" '
+             f'stroke="#E4E6EB" stroke-width="1"/>']
+    if series:
+        label, values, color = series[0][0], series[0][1], series[0][2]
+        pts = [xy(i, v) for i, v in enumerate(values)]
+        if pts:
+            area_d = (f"M {pts[0][0]:.1f},{pad_t + plot_h:.1f} "
+                      + " L ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+                      + f" L {pts[-1][0]:.1f},{pad_t + plot_h:.1f} Z")
+            parts.append(f'<path d="{area_d}" fill="{color}" fill-opacity="0.12"/>')
+    for item in series:
+        label, values, color = item[0], item[1], item[2]
+        dashed = len(item) > 3 and item[3] == "dash"
+        pts = [xy(i, v) for i, v in enumerate(values)]
+        if not pts:
+            continue
+        path_d = "M " + " L ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        dash_attr = ' stroke-dasharray="5,3"' if dashed else ""
+        parts.append(f'<path d="{path_d}" fill="none" stroke="{color}" stroke-width="2.2"{dash_attr} '
+                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+    legend = "".join(
+        f'<span style="display:inline-flex;align-items:center;gap:4pt;margin-right:12pt;">'
+        f'<span style="display:inline-block;width:7pt;height:7pt;background:{c};border-radius:2pt;"></span>'
+        f'<font size="1" color="#65676B">{lbl}</font></span>'
+        for lbl, _, c, *_ in series
+    )
+    svg = (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+           f'xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>')
+    return f'<div style="margin:8pt 0 2pt;">{svg}</div><div style="margin-bottom:8pt;">{legend}</div>'
+
+
+def _svg_bar_chart_v(dates, values, color, width=520, height=200):
+    """Barras verticais por data (ex: leads por dia)."""
+    pad_l, pad_r, pad_t, pad_b = 4, 4, 6, 4
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    n = len(values)
+    vmax = (max(values) if values else 0) or 1
+    vmax *= 1.15
+    bar_w = (plot_w / max(n, 1)) * 0.6
+    parts = [f'<line x1="{pad_l}" y1="{pad_t + plot_h:.1f}" x2="{width - pad_r}" y2="{pad_t + plot_h:.1f}" '
+             f'stroke="#E4E6EB" stroke-width="1"/>']
+    for i, v in enumerate(values):
+        cx = pad_l + (i + 0.5) / max(n, 1) * plot_w
+        h = (v / vmax) * plot_h if vmax else 0
+        parts.append(f'<rect x="{cx - bar_w / 2:.1f}" y="{pad_t + plot_h - h:.1f}" width="{bar_w:.1f}" '
+                     f'height="{h:.1f}" fill="{color}" rx="2"/>')
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            f'xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>')
+
+
+def _svg_bar_chart_h(items, width=520, row_h=22):
+    """items: [(label, value, color, display_text), ...] — barras horizontais (ranking).
+    display_text já vem formatado por quem chama (currency/percent/number conforme a
+    métrica) — usar number() fixo aqui mostrava "0" pra CTR (0.85 arredondado)."""
+    if not items:
+        return ""
+    label_w = 140
+    val_w = 55
+    bar_area = width - label_w - val_w
+    vmax = max((v for _, v, _, _ in items), default=0) or 1
+    height = row_h * len(items) + 6
+    parts = []
+    y = 3
+    for label, value, color, display in items:
+        bar_w = max((value / vmax) * bar_area, 2)
+        lbl = (str(label)[:22] + "…") if len(str(label)) > 22 else str(label)
+        parts.append(f'<text x="0" y="{y + row_h / 2 + 3:.1f}" font-size="8" fill="#1C1E21" '
+                     f'font-family="Arial">{lbl}</text>')
+        parts.append(f'<rect x="{label_w}" y="{y + 4}" width="{bar_w:.1f}" height="{row_h - 8}" '
+                     f'fill="{color}" rx="2"/>')
+        parts.append(f'<text x="{label_w + bar_w + 6:.1f}" y="{y + row_h / 2 + 3:.1f}" font-size="8" '
+                     f'fill="#65676B" font-family="Arial">{display}</text>')
+        y += row_h
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            f'xmlns="http://www.w3.org/2000/svg">{"".join(parts)}</svg>')
+
+
+def _polar(cx, cy, r, deg):
+    rad = math.radians(deg - 90)
+    return cx + r * math.cos(rad), cy + r * math.sin(rad)
+
+
+def _donut_segment_path(cx, cy, r_outer, r_inner, start_deg, end_deg):
+    large = 1 if (end_deg - start_deg) > 180 else 0
+    x1o, y1o = _polar(cx, cy, r_outer, start_deg)
+    x2o, y2o = _polar(cx, cy, r_outer, end_deg)
+    x1i, y1i = _polar(cx, cy, r_inner, end_deg)
+    x2i, y2i = _polar(cx, cy, r_inner, start_deg)
+    return (f"M {x1o:.2f},{y1o:.2f} A {r_outer:.2f},{r_outer:.2f} 0 {large},1 {x2o:.2f},{y2o:.2f} "
+            f"L {x1i:.2f},{y1i:.2f} A {r_inner:.2f},{r_inner:.2f} 0 {large},0 {x2i:.2f},{y2i:.2f} Z")
+
+
+def _svg_donut_chart(segments, width=340, height=160):
+    """segments: [(label, value, color), ...]. Rosca com legenda ao lado —
+    proporção de investimento por conjunto de anúncios."""
+    segments = [s for s in segments if s[1] > 0]
+    if not segments:
+        return ""
+    total = sum(v for _, v, _ in segments)
+    cx, cy, r_outer, r_inner = 62, height / 2, 52, 30
+    if len(segments) == 1:
+        color = segments[0][2]
+        paths = [f'<circle cx="{cx}" cy="{cy}" r="{r_outer}" fill="{color}"/>',
+                 f'<circle cx="{cx}" cy="{cy}" r="{r_inner}" fill="white"/>']
+    else:
+        paths = []
+        angle = 0.0
+        for _, value, color in segments:
+            sweep = value / total * 360
+            if sweep > 0:
+                paths.append(f'<path d="{_donut_segment_path(cx, cy, r_outer, r_inner, angle, angle + sweep)}" '
+                             f'fill="{color}"/>')
+            angle += sweep
+    legend = []
+    ly = max(height / 2 - len(segments) * 9, 8)
+    for label, value, color in segments[:8]:
+        pct = value / total * 100
+        lbl = (str(label)[:18] + "…") if len(str(label)) > 18 else str(label)
+        legend.append(f'<rect x="130" y="{ly:.1f}" width="9" height="9" fill="{color}" rx="2"/>'
+                      f'<text x="144" y="{ly + 8:.1f}" font-size="8" fill="#1C1E21" font-family="Arial">'
+                      f'{lbl} ({pct:.0f}%)</text>')
+        ly += 17
+    return (f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            f'xmlns="http://www.w3.org/2000/svg">{"".join(paths)}{"".join(legend)}</svg>')
+
+
+def _icon_svg(path_or_shapes, color, size=18):
+    return (f'<svg width="{size}" height="{size}" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" '
+            f'style="flex-shrink:0;">{path_or_shapes.format(c=color)}</svg>')
+
+
+_SECTION_ICON_SHAPES = {
+    "overview":   '<rect x="3" y="10" width="3.5" height="7" fill="{c}"/><rect x="8.3" y="6" width="3.5" height="11" fill="{c}"/><rect x="13.5" y="2" width="3.5" height="15" fill="{c}"/>',
+    "awareness":  '<circle cx="10" cy="10" r="8" fill="none" stroke="{c}" stroke-width="1.6"/><circle cx="10" cy="10" r="3" fill="{c}"/>',
+    "traffic":    '<polygon points="4,3 4,17 8,13 11,19 13,18 10,12 16,12" fill="{c}"/>',
+    "leads":      '<circle cx="10" cy="6" r="4" fill="{c}"/><path d="M2 19c0-4.5 3.5-7 8-7s8 2.5 8 7" fill="none" stroke="{c}" stroke-width="2" stroke-linecap="round"/>',
+    "conversions": '<circle cx="10" cy="10" r="9" fill="none" stroke="{c}" stroke-width="1.6"/><text x="10" y="14" font-size="11" font-weight="700" fill="{c}" text-anchor="middle" font-family="Arial">$</text>',
+    "adsets":     '<rect x="3" y="3" width="14" height="4" rx="1.5" fill="{c}"/><rect x="3" y="9" width="14" height="4" rx="1.5" fill="{c}" opacity="0.7"/><rect x="3" y="15" width="14" height="4" rx="1.5" fill="{c}" opacity="0.45"/>',
+    "creatives":  '<rect x="2" y="3" width="16" height="14" rx="2" fill="none" stroke="{c}" stroke-width="1.6"/><circle cx="7" cy="8" r="1.8" fill="{c}"/><path d="M3 15l4.5-5 3 3.5L15 9l3 6" fill="none" stroke="{c}" stroke-width="1.6" stroke-linejoin="round" fill-opacity="0"/>',
+}
+
+
+def _section_campaign_pdf(icon_key, title):
+    icon = _icon_svg(_SECTION_ICON_SHAPES.get(icon_key, ""), PULSO_BLUE) if icon_key in _SECTION_ICON_SHAPES else ""
+    return (
+        f'<div style="display:flex;align-items:center;gap:7pt;border-bottom:2pt solid {PULSO_BLUE};'
+        f'margin-top:16pt;margin-bottom:8pt;padding-bottom:5pt;">'
+        f'{icon}<h2 style="font-size:13pt;color:#1C1E21;">{title}</h2></div>'
+    )
+
+
+def _cover_pdf(client_name, campaign_name, since, until):
+    return f'''<div style="page-break-after:always;position:relative;width:100%;height:29.7cm;">
+  <div style="position:absolute;top:0;left:0;width:100%;height:60%;background:{PULSO_BLUE};"></div>
+  <div style="position:absolute;top:0;right:0;width:9cm;height:60%;background:{PULSO_GOLD};"></div>
+  <div style="position:absolute;top:9cm;left:1.6cm;color:white;">
+    <p style="font-size:11pt;letter-spacing:3pt;text-transform:uppercase;color:#E8ECF1;margin-bottom:10pt;">Relatório de Campanha</p>
+    <h1 style="font-size:28pt;font-weight:700;color:white;max-width:15cm;line-height:1.25;">{campaign_name}</h1>
+    <p style="font-size:12pt;color:#E8ECF1;margin-top:8pt;">{client_name}</p>
+  </div>
+  <div style="position:absolute;bottom:3.2cm;left:1.6cm;color:#1C1E21;">
+    <p style="font-size:9pt;color:#65676B;text-transform:uppercase;letter-spacing:1pt;">Período analisado</p>
+    <p style="font-size:15pt;font-weight:700;">{since} — {until}</p>
+  </div>
+  <div style="position:absolute;bottom:1.3cm;left:1.6cm;font-size:9pt;color:#95A5A6;">Gerado automaticamente via Pulso</div>
+</div>'''
+
+
+def _campaign_pdf_body(df, sections, df_adsets=None, df_ads=None):
+    """Mesma estrutura de seções que _pdf_body, mas sem comparação de período
+    (o relatório de campanha única não tem período anterior) e com os
+    componentes visuais do Pulso (_section_campaign_pdf, gráficos SVG)."""
+    body = ""
+
+    if "Visão Geral" in sections:
+        body += _section_campaign_pdf("overview", "Visão Geral")
+        body += _row_pdf([
+            ("Investimento", currency(df["spend"].sum())),
+            ("Impressões",   number(df["impressions"].sum())),
+            ("Alcance",      number(df["reach"].sum())),
+            ("Cliques",      number(df["clicks"].sum())),
+        ])
+        daily = df.groupby("date").agg(spend=("spend", "sum")).reset_index()
+        body += _svg_line_chart(daily["date"].tolist(), [("Investimento (R$)", daily["spend"].tolist(), PULSO_BLUE)])
+        body += _campaign_table_pdf(*_agg_overview(df))
+
+    if "Awareness" in sections:
+        dfa = df[df["campaign_type"] == "awareness"]
+        if not dfa.empty:
+            body += _section_campaign_pdf("awareness", "Awareness — Alcance e Visibilidade")
+            freq = dfa["impressions"].sum() / dfa["reach"].sum() if dfa["reach"].sum() > 0 else 0
+            body += _row_pdf([
+                ("Alcance", number(dfa["reach"].sum())),
+                ("Impressões", number(dfa["impressions"].sum())),
+                ("Frequência", f"{freq:.2f}x"),
+                ("CPM", currency(dfa["cpm"].mean())),
+                ("Investimento", currency(dfa["spend"].sum())),
+            ])
+            daily_a = dfa.groupby("date").agg(reach=("reach", "sum"), impressions=("impressions", "sum")).reset_index()
+            body += _svg_line_chart(daily_a["date"].tolist(), [
+                ("Alcance", daily_a["reach"].tolist(), PULSO_BLUE),
+                ("Impressões", daily_a["impressions"].tolist(), PULSO_GOLD),
+            ])
+            body += _campaign_table_pdf(*_agg_awareness(dfa))
+
+    if "Tráfego" in sections:
+        dft = df[df["campaign_type"] == "traffic"]
+        if not dft.empty:
+            body += _section_campaign_pdf("traffic", "Tráfego")
+            ctr = dft["clicks"].sum() / dft["impressions"].sum() * 100 if dft["impressions"].sum() > 0 else 0
+            body += _row_pdf([
+                ("Cliques", number(dft["clicks"].sum())),
+                ("Cliques no Link", number(dft["link_clicks"].sum())),
+                ("CTR", percent(ctr)),
+                ("CPC", currency(dft["cpc"].mean())),
+                ("Investimento", currency(dft["spend"].sum())),
+            ])
+            daily_t = dft.groupby("date").agg(clicks=("clicks", "sum"), link_clicks=("link_clicks", "sum")).reset_index()
+            body += _svg_line_chart(daily_t["date"].tolist(), [
+                ("Cliques totais", daily_t["clicks"].tolist(), PULSO_BLUE),
+                ("Cliques no link", daily_t["link_clicks"].tolist(), PULSO_GREEN),
+            ])
+            body += _campaign_table_pdf(*_agg_traffic(dft))
+
+    if "Leads" in sections:
+        dfl = df[df["campaign_type"] == "leads"]
+        if not dfl.empty:
+            body += _section_campaign_pdf("leads", "Geração de Leads")
+            total_l = dfl["leads"].sum()
+            spend_l = dfl["spend"].sum()
+            cpl_val = spend_l / total_l if total_l > 0 else 0
+            body += _row_pdf([
+                ("Leads Gerados", number(total_l)),
+                ("Custo por Lead", currency(cpl_val)),
+                ("Investimento", currency(spend_l)),
+                ("CTR", percent(dfl["ctr"].mean())),
+            ])
+            daily_l = dfl.groupby("date").agg(leads=("leads", "sum")).reset_index()
+            body += _svg_bar_chart_v(daily_l["date"].tolist(), daily_l["leads"].tolist(), PULSO_GREEN)
+            body += _campaign_table_pdf(*_agg_leads(dfl))
+
+    if "Conversões" in sections:
+        dfc, _, cd = _get_conv_data(df, pd.DataFrame())
+        if not dfc.empty:
+            body += _section_campaign_pdf("conversions", "Conversões e Vendas")
+            cards = [
+                ("Receita Gerada", currency(cd["total_rev"])),
+                ("ROAS", roas(cd["roas_val"])),
+                ("Compras", number(cd["total_pur"])),
+                ("Custo por Compra", currency(cd["cpa_val"])),
+                ("Investimento", currency(cd["total_spend_c"])),
+            ]
+            if cd["total_conv"] > 0:
+                cards += [
+                    ("Conversas Iniciadas", number(cd["total_conv"])),
+                    ("Custo por Conversa", currency(cd["cpc_conv_val"])),
+                ]
+            body += _row_pdf(cards)
+            daily_c = dfc.groupby("date").agg(purchase_value=("purchase_value", "sum"), spend=("spend", "sum")).reset_index()
+            body += _svg_line_chart(daily_c["date"].tolist(), [
+                ("Receita (R$)", daily_c["purchase_value"].tolist(), PULSO_GREEN),
+                ("Investimento (R$)", daily_c["spend"].tolist(), PULSO_BLUE, "dash"),
+            ])
+            body += _campaign_table_pdf(*_agg_conversions(dfc))
+
+    if "Conjuntos de Anúncios" in sections:
+        agg_as, cols_as = _agg_adsets(df_adsets)
+        if agg_as is not None:
+            body += _section_campaign_pdf("adsets", "Conjuntos de Anúncios")
+            top_as = agg_as.head(10)
+            body += _svg_bar_chart_h([(r["adset_name"], r["spend"], PULSO_BLUE, currency(r["spend"])) for _, r in top_as.iterrows()])
+            if len(top_as) > 1:
+                segments = [(r["adset_name"], r["spend"], PULSO_DONUT_COLORS[i % len(PULSO_DONUT_COLORS)])
+                           for i, (_, r) in enumerate(top_as.iterrows())]
+                body += '<p style="font-size:7pt;color:#65676B;font-weight:bold;margin-top:6pt;margin-bottom:2pt;">DISTRIBUIÇÃO DO INVESTIMENTO</p>'
+                body += _svg_donut_chart(segments)
+            body += _campaign_table_pdf(agg_as, cols_as)
+
+    if "Criativos" in sections:
+        result = _agg_ads(df_ads)
+        if result[0] is not None:
+            _, top_ctr, top_spend, base_cols = result
+            body += _section_campaign_pdf("creatives", "Criativos — Análise por Anúncio")
+            body += _creative_gallery_pdf(top_spend)
+            if not top_spend.empty:
+                body += _svg_bar_chart_h([(r["ad_name"], r["spend"], PULSO_BLUE, currency(r["spend"])) for _, r in top_spend.iterrows()])
+                body += '<p style="font-size:7pt;color:#65676B;font-weight:bold;margin-top:8pt;margin-bottom:2pt;">TOP 10 POR INVESTIMENTO</p>'
+                body += _campaign_table_pdf(top_spend, base_cols)
+            if not top_ctr.empty:
+                body += _svg_bar_chart_h([(r["ad_name"], r["ctr"], PULSO_GOLD, percent(r["ctr"])) for _, r in top_ctr.iterrows()])
+                body += '<p style="font-size:7pt;color:#65676B;font-weight:bold;margin-top:8pt;margin-bottom:2pt;">TOP 10 POR CTR</p>'
+                body += _campaign_table_pdf(top_ctr, base_cols)
+
+    return body
+
+
+def generate_campaign_report_pdf(df, client_name, campaign_name, since, until, sections,
+                                 df_adsets=None, df_ads=None) -> bytes:
+    """Relatório em PDF de UMA campanha só, com a identidade visual do Pulso
+    (capa, ícones, cores, gráficos em SVG) — usado por api/main.py:/api/campaign-report.
+    Não reaproveita generate_pdf_report/_pdf_body de propósito: aquele caminho é
+    usado pelo relatório de conta inteira do Streamlit e ninguém pediu pra mudar
+    a aparência dele."""
+    body = _campaign_pdf_body(df, sections, df_adsets=df_adsets, df_ads=df_ads)
+    cover = _cover_pdf(client_name, campaign_name, since, until)
+    html_str = _wrap(body, client_name, since, until, for_pdf=True, cover=cover)
+
+    try:
+        from weasyprint import HTML
+        return HTML(string=html_str).write_pdf()
+    except Exception:
+        pass
+    try:
+        from xhtml2pdf import pisa
+        buf = BytesIO()
+        status = pisa.CreatePDF(html_str, dest=buf, encoding="utf-8")
+        if not status.err:
+            return buf.getvalue()
+    except Exception:
+        pass
+    raise ImportError("pdf_unavailable")
 
 
 # ── API pública ────────────────────────────────────────────────────────────────

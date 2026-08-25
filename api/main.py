@@ -525,7 +525,7 @@ def campaign_report(
         get_insights_for_report, get_adset_insights_for_report,
         get_ad_insights_for_report, get_ad_creatives_bg,
     )
-    from utils.report_generator import generate_pdf_report, generate_report
+    from utils.report_generator import generate_campaign_report_pdf, generate_report
 
     account = _require_campaign(token, campaign_id)
     account_id = account["account_id"]
@@ -553,6 +553,7 @@ def campaign_report(
         )
 
     campaign_type = df["campaign_type"].iloc[0]
+    campaign_name = df["campaign_name"].iloc[0]
     sections = ["Visão Geral"] + _REPORT_SECTIONS_BY_TYPE.get(campaign_type, []) + ["Conjuntos de Anúncios", "Criativos"]
     client_name = account.get("name") or "Cliente"
 
@@ -561,8 +562,8 @@ def campaign_report(
                                 df_adsets=df_adsets, df_ads=df_ads)
         return HTMLResponse(html)
 
-    pdf_bytes = generate_pdf_report(df, df_prev, client_name, since, until, sections,
-                                     df_adsets=df_adsets, df_ads=df_ads)
+    pdf_bytes = generate_campaign_report_pdf(df, client_name, campaign_name, since, until, sections,
+                                              df_adsets=df_adsets, df_ads=df_ads)
     return Response(content=pdf_bytes, media_type="application/pdf",
                      headers={"Content-Disposition": 'attachment; filename="relatorio.pdf"'})
 
