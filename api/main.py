@@ -568,6 +568,42 @@ def campaign_report(
                      headers={"Content-Disposition": 'attachment; filename="relatorio.pdf"'})
 
 
+@app.get("/api/campaign-alerts")
+def campaign_alerts(
+    token: str = Query(...),
+    campaign_id: str = Query(...),
+    since: str = Query(...),
+    until: str = Query(...),
+):
+    """Alertas/sugestões (regra determinística, utils/alerts.py) de UMA campanha,
+    comparando com o período anterior de mesma duração. Usado só pelo card de
+    campanha do Pulso, visão do admin (nunca mostrado ao cliente). Escopo
+    travado na conta do token via _require_campaign (anti-IDOR)."""
+    from datetime import datetime, timedelta
+    from utils.meta_api_bg import get_insights_for_report, get_adset_insights_for_report
+    from utils.alerts import generate_alerts
+
+    account = _require_campaign(token, campaign_id)
+    account_id = account["account_id"]
+
+    d_since = datetime.strptime(since, "%Y-%m-%d")
+    d_until = datetime.strptime(until, "%Y-%m-%d")
+    n_days = (d_until - d_since).days + 1
+    prev_until = d_since - timedelta(days=1)
+    prev_since = prev_until - timedelta(days=n_days - 1)
+
+    df = get_insights_for_report(account_id, since, until)
+    df = df[df["campaign_id"] == campaign_id] if not df.empty else df
+
+    df_prev = get_insights_for_report(account_id, str(prev_since.date()), str(prev_until.date()))
+    df_prev = df_prev[df_prev["campaign_id"] == campaign_id] if not df_prev.empty else df_prev
+
+    df_adsets = get_adset_insights_for_report(account_id, since, until)
+    df_adsets = df_adsets[df_adsets["campaign_id"] == campaign_id] if not df_adsets.empty else df_adsets
+
+    return {"alerts": generate_alerts(df, df_prev, df_adsets)}
+
+
 @app.get("/api/leads")
 def campaign_leads(
     token: str = Query(...),
